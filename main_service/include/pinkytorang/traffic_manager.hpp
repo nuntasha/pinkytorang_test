@@ -54,6 +54,7 @@ class TrafficManager {
   bool setGoal(const std::string& id, const std::string& node);  // 경로가 없으면 false
   void clearGoal(const std::string& id);
   bool isStationary(const std::string& id) const;  // 보낸 노드도 없고 목적지도 없음
+  std::string goalOf(const std::string& id) const;  // 목적지 ("" = 없음)
 
   // ---- 로봇 이벤트
   void onNodeReached(const std::string& id, const std::string& node);

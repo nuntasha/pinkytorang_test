@@ -11,6 +11,11 @@
 //       WAITING (입구 로봇 기다림) → ASSIGNED → TO_TABLE → AT_TABLE [SEATED/시간초과]
 //       → TO_DOCK → DONE.  취소는 착석 전(WAITING · ASSIGNED · TO_TABLE)까지
 // 테이블: FREE → (안내 배정) RESERVED → (착석) OCCUPIED → (직원 정리 완료) FREE
+//
+// 스케줄링 (afterChange): 안내 최대 max_active_guide · 서빙 최대 max_active_serve (만석이면 로봇 전부)
+//   대기 배치: 찬 테이블 수에 따라 입구 2 / 1 / 0대, 나머지는 픽업 쪽 도킹
+//   같은 테이블 대기 주문은 한 로봇이 묶어서, 도킹 복귀 중인 로봇도 이어받기
+//   고장 · 통신 끊김이 reassign_after_sec 넘으면 적재 전 서빙은 다시 배정
 #pragma once
 
 #include <chrono>
@@ -83,6 +88,9 @@ class TaskManager {
     Clock::time_point timeout_at;
     bool need_dock = false;            // 빈 도킹이 없어 기다리는 중
     Clock::time_point ended_at;
+    // 같은 테이블 묶음 배달: 앞장 작업(lead)이 로봇 · 이동 · 확인 버튼을 맡고, 나머지(riders)는 단계만 따라간다
+    int lead = -1;                     // 따라가는 작업이면 앞장 작업 번호
+    std::vector<int> riders;           // 앞장 작업이면 같이 싣는 작업들
   };
 
   struct Robot {
@@ -100,6 +108,9 @@ class TaskManager {
     bool charging = false;  // 배터리 부족: 배정 안 함
     bool error_alerted = false;
     std::string loc_problem;
+    bool bad = false;                // 고장 또는 통신 끊김
+    Clock::time_point bad_since;
+    bool stuck_alerted = false;      // 실은 채 멈춤 알림 보냄
   };
 
   struct Table {
@@ -115,8 +126,14 @@ class TaskManager {
   void dispatchGuide();      // 테이블 정해진 안내 -> 입구 로봇
   void dispatchServe();      // 조리 완료된 서빙 -> 가까운 로봇
   void sendIdleRobotsHome();
-  void fillEntranceDock();   // 입구 도킹이 비면 쉬는 로봇을 입구로
+  void rebalanceStandby();   // 찬 테이블 수에 맞게 쉬는 로봇을 입구 / 픽업 쪽으로 옮김
+  void fixDockConflicts();   // 뒤칸(D1)으로 가는데 앞칸(D2)에 로봇이 서 있으면 자리 바꿈 / 다른 도킹으로
+  bool redirectDock(Robot& r, const std::string& dock);  // 도킹으로 가는 로봇의 목적지 바꾸기
   void retryDocks();
+  void recoverStuckTasks(Clock::time_point now);  // 고장 · 통신 끊김 로봇의 작업 처리
+  void unassign(Task& t, const std::string& why); // 적재 전 작업을 로봇에서 떼어 WAITING으로
+  void mirrorStage(Task& o, Stage s, const Task& lead);  // 묶음 작업 단계 따라가기
+  Task* joinableTrip(const Task& t);              // 같은 테이블로 아직 적재 전인 앞장 작업
   void enterStage(Task& t, Stage s);
   void goTo(Task& t, const std::string& node);
   void openConfirm(Task& t, Confirm c, int countdown);
@@ -133,7 +150,12 @@ class TaskManager {
   bool robotFree(const Robot& r);      // 배정 가능: 쓸 수 있고 · 충전 아님 · 작업 없음 · 귀가 중 아님
   bool hasWaitingGuide() const;
   bool tableBusy(const std::string& table) const;  // 그 테이블로 가는 중이거나 서 있는 로봇이 있나 (종류 상관없이)
-  bool entranceOk(const std::string& robot_id);  // 배터리가 충분해서 입구 도킹에 세워도 되나
+  bool entranceOk(const std::string& robot_id);  // 배터리가 충분해서 입구 도킹에 세워도 되나 / 이어받기 가능
+  int freeTableCount() const;
+  int entranceStandbyWanted() const;   // 입구에 세워 둘 로봇 수 (찬 테이블 수 기준)
+  int entranceStandbyCount() const;    // 입구 도킹에 있거나 가는 중인 (충전 아닌) 로봇 수
+  bool wantEntrance(const std::string& robot_id) const;  // 이 로봇을 입구 도킹으로 보낼까
+  std::string pickDockFor(const std::string& robot_id) const;
   Robot* findRobot(const std::string& id);
   Task* findTask(int id);
   Table* findTable(const std::string& id);

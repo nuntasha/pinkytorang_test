@@ -29,7 +29,16 @@ bool loadConfig(const std::string& path, Config& cfg, std::string& error) {
     if (root["depart_grace_sec"]) cfg.depart_grace_sec = root["depart_grace_sec"].as<int>();
     if (root["guide_timeout_sec"]) cfg.guide_timeout_sec = root["guide_timeout_sec"].as<int>();
     if (root["max_active_serve"]) cfg.max_active_serve = root["max_active_serve"].as<int>();
-    if (root["entrance_dock"]) cfg.entrance_dock = root["entrance_dock"].as<std::string>();
+    if (root["max_active_guide"]) cfg.max_active_guide = root["max_active_guide"].as<int>();
+    if (root["serve_batch_max"]) cfg.serve_batch_max = root["serve_batch_max"].as<int>();
+    if (root["reassign_after_sec"]) cfg.reassign_after_sec = root["reassign_after_sec"].as<int>();
+    if (root["entrance_docks"]) cfg.entrance_docks = root["entrance_docks"].as<std::vector<std::string>>();
+    else if (root["entrance_dock"]) cfg.entrance_docks = {root["entrance_dock"].as<std::string>()};  // 예전 설정
+    if (root["pickup_docks"]) cfg.pickup_docks = root["pickup_docks"].as<std::vector<std::string>>();
+    if (root["dock_via"]) cfg.dock_via = root["dock_via"].as<std::map<std::string, std::string>>();
+    if (root["busy_tables"]) cfg.busy_tables = root["busy_tables"].as<int>();
+    if (root["entrance_standby_quiet"]) cfg.entrance_standby_quiet = root["entrance_standby_quiet"].as<int>();
+    if (root["entrance_standby_busy"]) cfg.entrance_standby_busy = root["entrance_standby_busy"].as<int>();
     if (root["entrance_keep_penalty_m"]) cfg.entrance_keep_penalty_m = root["entrance_keep_penalty_m"].as<double>();
     if (root["min_battery_pct"]) cfg.min_battery_pct = root["min_battery_pct"].as<double>();
     if (root["ready_battery_pct"]) cfg.ready_battery_pct = root["ready_battery_pct"].as<double>();

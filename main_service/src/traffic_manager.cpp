@@ -126,6 +126,12 @@ bool TrafficManager::isStationary(const std::string& id) const {
 }
 
 // 보낸 노드가 없고 지금 노드가 목적지면 도착
+std::string TrafficManager::goalOf(const std::string& id) const {
+  auto it = robots_.find(id);
+  if (it == robots_.end()) return "";
+  return it->second.goal;
+}
+
 void TrafficManager::checkArrival(Robot& r) {
   if (r.goal.empty() || !r.committed.empty() || r.cmd_active) return;
   if (r.at != r.goal) return;

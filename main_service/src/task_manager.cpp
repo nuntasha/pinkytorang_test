@@ -1,5 +1,7 @@
 #include "pinkytorang/task_manager.hpp"
 
+#include <algorithm>
+
 #include "pinkytorang/log.hpp"
 
 namespace pinky {
@@ -33,8 +35,17 @@ TaskManager::TaskManager(const Config& cfg, const MapManager& map, TrafficManage
     tb.node = node;
     tables_[tc.id] = tb;
   }
-  const MapNode* e = map_.node(cfg.entrance_dock);
-  if (!e || e->stop_kind != "DOCK") logLine("TASK", "설정 오류: entrance_dock " + cfg.entrance_dock + " 가 도킹 노드가 아님");
+  std::vector<std::string> docks = cfg.entrance_docks;
+  docks.insert(docks.end(), cfg.pickup_docks.begin(), cfg.pickup_docks.end());
+  for (const auto& via : cfg.dock_via) {
+    docks.push_back(via.first);
+    docks.push_back(via.second);
+  }
+  for (const std::string& id : docks) {
+    const MapNode* n = map_.node(id);
+    if (!n || n->stop_kind != "DOCK") logLine("TASK", "설정 오류: " + id + " 가 도킹 노드가 아님");
+  }
+  if (cfg.entrance_docks.empty()) logLine("TASK", "설정 오류: entrance_docks 비어 있음 (안내 불가)");
 }
 
 void TaskManager::start() {
@@ -183,6 +194,7 @@ ApiResult TaskManager::confirm(int task_id, Confirm c) {
   std::lock_guard<std::mutex> lock(mutex_);
   Task* t = findTask(task_id);
   if (!t) return errorResult(409, "not_waiting");
+  if (t->lead >= 0 && findTask(t->lead)) t = findTask(t->lead);  // 묶음 작업이면 앞장 작업의 버튼
   ApiResult r = handleConfirm(*t, c, "BUTTON");
   afterChange();
   return r;
@@ -331,6 +343,7 @@ void TaskManager::tick() {
   Clock::time_point now = Clock::now();
 
   traffic_.tick();  // 막혀서 기다리는 로봇: 우회 · 대기 시간 다시 판단
+  recoverStuckTasks(now);
 
   // 테이블 확인 시간 초과 -> 일이 끝난 것으로 보고 출발
   for (auto& pair : tasks_) {
@@ -358,7 +371,8 @@ void TaskManager::afterChange() {
   dispatchGuide();
   dispatchServe();
   sendIdleRobotsHome();
-  fillEntranceDock();
+  fixDockConflicts();
+  rebalanceStandby();
   processArrivals();
 }
 
@@ -390,24 +404,34 @@ bool TaskManager::robotUsable(const Robot& r) {
 }
 
 bool TaskManager::robotFree(const Robot& r) {
-  return robotUsable(r) && !r.charging && r.task_id < 0 && !r.homing;
+  return robotUsable(r) && !r.charging && r.task_id < 0 && !r.homing && !dispatch_.dockBlocked(r.id);
 }
 
-// 안내는 입구 도킹에 서 있는 로봇이 맡는다
+// 안내는 입구 도킹에 서 있는 로봇이 맡는다 (앞칸 로봇부터). 동시에 max_active_guide 대까지
 void TaskManager::dispatchGuide() {
+  int active = 0;
+  for (auto& pair : tasks_) {
+    const Task& o = pair.second;
+    if (o.kind == TaskKind::GUIDE &&
+        (o.stage == Stage::ASSIGNED || o.stage == Stage::TO_TABLE || o.stage == Stage::AT_TABLE))
+      active++;
+  }
+  if (active >= cfg_.max_active_guide) return;
+
   for (auto& pair : tasks_) {
     Task& t = pair.second;
     if (t.kind != TaskKind::GUIDE || t.stage != Stage::WAITING) continue;
     if (tableBusy(t.table)) continue;  // 그 테이블에 서빙 로봇이 아직 있으면 떠난 뒤에
 
     std::string robot_id;
-    for (auto& rp : robots_) {
-      Robot& r = rp.second;
-      if (robotFree(r) && traffic_.isStationary(r.id) && traffic_.currentNode(r.id) == cfg_.entrance_dock) {
-        robot_id = r.id;
+    for (const std::string& dock : cfg_.entrance_docks) {
+      for (auto& rp : robots_) {
+        Robot& r = rp.second;
+        if (robot_id.empty() && robotFree(r) && traffic_.isStationary(r.id) && traffic_.currentNode(r.id) == dock)
+          robot_id = r.id;
       }
     }
-    if (robot_id.empty()) return;  // 입구 로봇이 없으면 다음 tick에 (입구는 한 대뿐)
+    if (robot_id.empty()) return;  // 입구 로봇이 없으면 다음에 (rebalanceStandby가 채움)
 
     t.robot = robot_id;
     robots_[robot_id].task_id = t.id;
@@ -417,42 +441,89 @@ void TaskManager::dispatchGuide() {
   }
 }
 
+// 같은 테이블로 가는, 아직 적재 전인 앞장 작업 (자리가 남아 있으면)
+TaskManager::Task* TaskManager::joinableTrip(const Task& t) {
+  for (auto& pair : tasks_) {
+    Task& l = pair.second;
+    if (l.id == t.id || l.kind != TaskKind::SERVE || l.lead >= 0 || l.table != t.table || l.robot.empty()) continue;
+    if (l.stage != Stage::ASSIGNED && l.stage != Stage::TO_PICKUP && l.stage != Stage::AT_PICKUP) continue;
+    if (static_cast<int>(l.riders.size()) + 1 >= cfg_.serve_batch_max) continue;
+    return &l;
+  }
+  return nullptr;
+}
+
 void TaskManager::dispatchServe() {
-  // 놀고 있는 로봇 목록
-  std::vector<std::string> free_robots;
+  // 만석이면 안내할 일이 없으니 로봇 전부 서빙, 아니면 max_active_serve 대까지
+  bool full = !tables_.empty() && freeTableCount() == 0;
+  int limit = full ? static_cast<int>(robots_.size()) : cfg_.max_active_serve;
+
+  // 일을 줄 수 있는 로봇: 놀고 있거나, 도킹으로 돌아가는 중인데 배터리가 충분한 로봇 (이어받기)
+  std::vector<std::string> candidates;
   for (auto& pair : robots_) {
-    if (robotFree(pair.second)) free_robots.push_back(pair.first);
+    Robot& r = pair.second;
+    if (!robotUsable(r) || r.charging || dispatch_.dockBlocked(r.id) || !entranceOk(r.id)) continue;
+    if (r.task_id < 0) {
+      candidates.push_back(r.id);  // 쉬는 중 · 도킹으로 가는 중(homing)
+      continue;
+    }
+    const Task* cur = findTask(r.task_id);
+    if (cur && cur->stage == Stage::TO_DOCK) candidates.push_back(r.id);
   }
 
   for (auto& pair : tasks_) {
-    if (free_robots.empty()) return;
     Task& t = pair.second;
-    if (t.kind != TaskKind::SERVE || t.stage != Stage::WAITING) continue;
+    if (t.kind != TaskKind::SERVE || t.stage != Stage::WAITING || t.lead >= 0) continue;
 
-    // 진행 중인 서빙 수
+    // 1) 같은 테이블로 아직 적재 전인 로봇이 있으면 같이 싣는다
+    if (Task* l = joinableTrip(t)) {
+      t.lead = l->id;
+      l->riders.push_back(t.id);
+      mirrorStage(t, l->stage, *l);
+      continue;
+    }
+    if (candidates.empty()) continue;
+
+    // 진행 중인 서빙 (앞장 작업만 = 로봇 수)
     int active = 0;
     for (auto& other_pair : tasks_) {
       const Task& o = other_pair.second;
-      if (o.kind != TaskKind::SERVE) continue;
-      if (o.stage == Stage::COOKING || o.stage == Stage::WAITING || isEnded(o.stage) || o.stage == Stage::TO_DOCK)
-        continue;
-      active++;
+      if (o.kind != TaskKind::SERVE || o.lead >= 0) continue;
+      if (o.stage == Stage::ASSIGNED || o.stage == Stage::TO_PICKUP || o.stage == Stage::AT_PICKUP ||
+          o.stage == Stage::TO_TABLE || o.stage == Stage::AT_TABLE)
+        active++;
     }
     // 테이블 자리(pocket)에는 한 번에 한 대만: 같은 테이블로 가는 로봇이 떠날 때까지 기다린다
-    if (!dispatch_.underServeLimit(active) || tableBusy(t.table)) continue;
+    if (active >= limit || tableBusy(t.table)) continue;
 
-    std::string robot_id = dispatch_.pickRobot(free_robots, pickup_node_);
+    std::string robot_id = dispatch_.pickRobot(candidates, pickup_node_, !full);
     if (robot_id.empty()) continue;
+    candidates.erase(std::find(candidates.begin(), candidates.end(), robot_id));
 
-    // 배정
-    for (size_t i = 0; i < free_robots.size(); ++i) {
-      if (free_robots[i] == robot_id) {
-        free_robots.erase(free_robots.begin() + static_cast<long>(i));
-        break;
+    // 2) 이어받기: 도킹으로 가던 작업은 여기서 끝낸다
+    Robot& r = robots_[robot_id];
+    if (r.task_id >= 0) {
+      Task* old = findTask(r.task_id);
+      if (old) {
+        record("TASK", robot_id + " 도킹 복귀 중 다음 서빙 이어받기 (task " + std::to_string(old->id) + " -> " +
+                           std::to_string(t.id) + ")");
+        enterStage(*old, Stage::DONE);
       }
     }
+    r.homing = false;
+
+    // 3) 같은 테이블의 다른 대기 주문도 같이 싣는다
+    for (auto& other_pair : tasks_) {
+      Task& o = other_pair.second;
+      if (static_cast<int>(t.riders.size()) + 1 >= cfg_.serve_batch_max) break;
+      if (o.id == t.id || o.kind != TaskKind::SERVE || o.stage != Stage::WAITING || o.lead >= 0 || o.table != t.table)
+        continue;
+      o.lead = t.id;
+      t.riders.push_back(o.id);
+    }
+
     t.robot = robot_id;
-    robots_[robot_id].task_id = t.id;
+    r.task_id = t.id;
     enterStage(t, Stage::ASSIGNED);
     enterStage(t, Stage::TO_PICKUP);
   }
@@ -465,8 +536,7 @@ void TaskManager::sendIdleRobotsHome() {
     if (!robotUsable(r) || r.task_id >= 0 || r.homing || !traffic_.isStationary(r.id)) continue;
     const MapNode* here = map_.node(traffic_.currentNode(r.id));
     if (!here || here->stop_kind == "DOCK") continue;
-    std::string dock = dispatch_.pickDock(r.id, entranceOk(r.id));  // 충전할 로봇은 입구를 막지 않게
-    if (dock.empty()) dock = dispatch_.pickDock(r.id, true);          // 입구밖에 없으면 입구라도
+    std::string dock = pickDockFor(r.id);
     if (dock.empty()) continue;
     if (traffic_.setGoal(r.id, dock)) {
       r.homing = true;
@@ -475,47 +545,103 @@ void TaskManager::sendIdleRobotsHome() {
   }
 }
 
-// 입구 도킹이 비어 있으면 다른 도킹에서 쉬는 로봇을 입구로 옮긴다.
-// 입구 로봇이 충전 중인데 손님이 기다리면, 충전 로봇을 다른 빈 도킹으로 비켜 준다
-void TaskManager::fillEntranceDock() {
-  const std::string& entrance = cfg_.entrance_dock;
-  if (!map_.node(entrance)) return;
+int TaskManager::freeTableCount() const {
+  int n = 0;
+  for (const auto& pair : tables_) {
+    if (pair.second.state == TableState::FREE) n++;
+  }
+  return n;
+}
 
-  if (traffic_.isDockFree(entrance, "")) {
+// 한가할 때(찬 테이블 < busy_tables) 입구 2대, 바쁠 때 1대, 만석이면 0대 (전부 픽업 쪽)
+int TaskManager::entranceStandbyWanted() const {
+  int busy = static_cast<int>(tables_.size()) - freeTableCount();
+  int want = (busy >= cfg_.busy_tables) ? cfg_.entrance_standby_busy : cfg_.entrance_standby_quiet;
+  if (!tables_.empty() && freeTableCount() == 0) want = 0;
+  return std::min(want, static_cast<int>(cfg_.entrance_docks.size()));
+}
+
+int TaskManager::entranceStandbyCount() const {
+  int n = 0;
+  for (const auto& pair : robots_) {
+    const Robot& r = pair.second;
+    if (!r.seen || !r.online || r.charging || !traffic_.isLocalized(r.id)) continue;
+    std::string target = traffic_.isStationary(r.id) ? traffic_.currentNode(r.id) : traffic_.goalOf(r.id);
+    if (dispatch_.isEntranceDock(target)) n++;
+  }
+  return n;
+}
+
+bool TaskManager::wantEntrance(const std::string& robot_id) const {
+  const auto it = robots_.find(robot_id);
+  if (it == robots_.end() || it->second.charging) return false;  // 충전할 로봇은 입구를 막지 않게
+  if (cfg_.min_battery_pct > 0 && it->second.battery < cfg_.min_battery_pct) return false;
+  return entranceStandbyCount() < entranceStandbyWanted();
+}
+
+std::string TaskManager::pickDockFor(const std::string& robot_id) const {
+  return dispatch_.pickDock(robot_id, wantEntrance(robot_id));
+}
+
+// 쉬는 로봇 자리 맞추기: 입구에 있어야 할 수(entranceStandbyWanted)보다 적으면 픽업 쪽에서 데려오고,
+// 많으면 입구 로봇(앞칸부터)을 픽업 쪽으로 보낸다. 손님이 기다리는데 입구 로봇이 충전 중이면 비켜 준다
+void TaskManager::rebalanceStandby() {
+  int want = entranceStandbyWanted();
+  int have = entranceStandbyCount();
+
+  if (have < want) {
     std::string best;
     double best_cost = 1e9;
     for (auto& pair : robots_) {
       Robot& r = pair.second;
-      if (!robotFree(r) || !traffic_.isStationary(r.id)) continue;
-      const MapNode* here = map_.node(traffic_.currentNode(r.id));
-      if (!here || here->stop_kind != "DOCK") continue;  // 도킹에서 쉬는 로봇만
-      double c = traffic_.pathCost(r.id, entrance);
+      if (!robotFree(r) || !traffic_.isStationary(r.id) || !entranceOk(r.id)) continue;
+      const std::string here = traffic_.currentNode(r.id);
+      const MapNode* n = map_.node(here);
+      if (!n || n->stop_kind != "DOCK" || dispatch_.isEntranceDock(here)) continue;  // 다른 도킹에서 쉬는 로봇만
+      std::string dock = dispatch_.pickDock(r.id, true);
+      if (!dispatch_.isEntranceDock(dock)) continue;
+      double c = traffic_.pathCost(r.id, dock);
       if (c >= 0 && c < best_cost) {
         best_cost = c;
         best = r.id;
       }
     }
     if (best.empty()) return;
-    if (traffic_.setGoal(best, entrance)) {
+    std::string dock = dispatch_.pickDock(best, true);
+    if (traffic_.setGoal(best, dock)) {
       robots_[best].homing = true;
-      record("TASK", best + " 입구 도킹으로 이동");
+      record("TASK", best + " 입구 대기로 이동 -> " + dock + " (입구 " + std::to_string(have) + "/" +
+                         std::to_string(want) + ")");
     }
     return;
   }
 
-  // 입구에 충전 중인 로봇이 서 있고, 손님이 기다리고, 대신할 로봇이 있으면 비켜 준다
-  if (!hasWaitingGuide()) return;
+  if (have > want) {
+    for (const std::string& entrance : cfg_.entrance_docks) {  // 앞칸 로봇부터 (뒤칸은 앞칸이 비어야 나옴)
+      for (auto& pair : robots_) {
+        Robot& r = pair.second;
+        if (!robotFree(r) || !traffic_.isStationary(r.id) || traffic_.currentNode(r.id) != entrance) continue;
+        std::string dock = dispatch_.pickDock(r.id, false);
+        if (dock.empty() || dispatch_.isEntranceDock(dock)) return;  // 픽업 쪽이 꽉 참
+        if (traffic_.setGoal(r.id, dock)) {
+          r.homing = true;
+          record("TASK", r.id + " 픽업 쪽 대기로 이동 -> " + dock + " (입구 " + std::to_string(have) + "/" +
+                             std::to_string(want) + ")");
+        }
+        return;
+      }
+    }
+    return;
+  }
+
+  // 입구에 충전 중인 로봇이 서 있고, 손님이 기다리고, 입구에 쓸 로봇이 없으면 비켜 준다
+  if (!hasWaitingGuide() || have > 0) return;
   for (auto& pair : robots_) {
     Robot& r = pair.second;
     if (!r.charging || r.task_id >= 0 || r.homing || !robotUsable(r) || !traffic_.isStationary(r.id)) continue;
-    if (traffic_.currentNode(r.id) != entrance) continue;
-    bool substitute = false;
-    for (auto& other : robots_) {
-      if (other.first != r.id && robotFree(other.second) && traffic_.isStationary(other.first)) substitute = true;
-    }
-    if (!substitute) return;
+    if (!dispatch_.isEntranceDock(traffic_.currentNode(r.id)) || dispatch_.dockBlocked(r.id)) continue;
     std::string dock = dispatch_.pickDock(r.id, false);
-    if (dock.empty()) return;
+    if (dock.empty() || dispatch_.isEntranceDock(dock)) return;
     if (traffic_.setGoal(r.id, dock)) {
       r.homing = true;
       record("TASK", r.id + " 충전 중이라 입구를 비켜 줌 -> " + dock);
@@ -524,16 +650,123 @@ void TaskManager::fillEntranceDock() {
   }
 }
 
+bool TaskManager::redirectDock(Robot& r, const std::string& dock) {
+  if (!traffic_.setGoal(r.id, dock)) return false;
+  Task* t = findTask(r.task_id);
+  if (t && t->stage == Stage::TO_DOCK) t->goal_node = dock;  // 도착 판정용
+  return true;
+}
+
+// 뒤칸(D1)은 앞칸(D2)을 지나야 들어간다. 뒤칸으로 가는 로봇이 있는데 앞칸에 다른 로봇이 서 있으면 (켤 때 순서 등)
+//   앞칸 로봇이 쉬는 중이면: 앞칸 로봇을 뒤칸으로 밀어 넣고, 오던 로봇은 앞칸으로
+//   못 움직이면: 오던 로봇을 다른 빈 도킹으로
+void TaskManager::fixDockConflicts() {
+  for (const auto& via : cfg_.dock_via) {
+    const std::string& back = via.first;
+    const std::string& front = via.second;
+    std::string parked;
+    for (auto& pair : robots_) {
+      if (traffic_.isLocalized(pair.first) && traffic_.isStationary(pair.first) &&
+          traffic_.currentNode(pair.first) == front)
+        parked = pair.first;
+    }
+    if (parked.empty()) continue;
+    for (auto& pair : robots_) {
+      Robot& x = pair.second;
+      if (x.id == parked || traffic_.goalOf(x.id) != back) continue;
+      Robot& y = robots_[parked];
+      if (robotUsable(y) && y.task_id < 0 && !y.homing && traffic_.isDockFree(back, x.id)) {
+        if (traffic_.setGoal(y.id, back) && redirectDock(x, front)) {
+          y.homing = true;
+          record("TASK", "입구 도킹 자리 바꿈: " + y.id + " " + front + " -> " + back + ", " + x.id + " -> " + front);
+        }
+      } else {
+        std::string dock = dispatch_.pickDock(x.id, false);
+        if (!dock.empty() && dock != back && redirectDock(x, dock))
+          record("TASK", x.id + " " + back + " 앞칸에 로봇이 있어 " + dock + "(으)로");
+      }
+      return;
+    }
+  }
+}
+
 void TaskManager::retryDocks() {
   for (auto& pair : tasks_) {
     Task& t = pair.second;
-    if (t.stage != Stage::TO_DOCK || !t.need_dock) continue;
-    std::string dock = dispatch_.pickDock(t.robot, entranceOk(t.robot));
-    if (dock.empty()) dock = dispatch_.pickDock(t.robot, true);
+    if (t.stage != Stage::TO_DOCK || !t.need_dock || t.lead >= 0) continue;
+    std::string dock = pickDockFor(t.robot);
     if (dock.empty()) continue;
     t.need_dock = false;
     goTo(t, dock);
   }
+}
+
+// ---------------------------------------------------------------- 고장 · 통신 끊김
+
+// reassign_after_sec 넘게 고장 · 통신 끊김이면
+//   적재 전 서빙(ASSIGNED · TO_PICKUP · AT_PICKUP): 로봇에서 떼어 다른 로봇에 다시 배정
+//   적재 후 서빙 / 안내 중: 음식 · 손님이 로봇에 있으니 직원 호출 알림만 (한 번)
+void TaskManager::recoverStuckTasks(Clock::time_point now) {
+  for (auto& pair : robots_) {
+    Robot& r = pair.second;
+    bool bad = r.seen && (!r.online || r.fault);
+    if (!bad) {
+      r.bad = false;
+      r.stuck_alerted = false;
+      continue;
+    }
+    if (!r.bad) {
+      r.bad = true;
+      r.bad_since = now;
+    }
+    if (r.task_id < 0 || now - r.bad_since < std::chrono::seconds(cfg_.reassign_after_sec)) continue;
+    Task* t = findTask(r.task_id);
+    if (!t) continue;
+    if (t->kind == TaskKind::SERVE &&
+        (t->stage == Stage::ASSIGNED || t->stage == Stage::TO_PICKUP || t->stage == Stage::AT_PICKUP)) {
+      unassign(*t, r.online ? "고장" : "통신 끊김");
+    } else if (!r.stuck_alerted && (t->stage == Stage::TO_TABLE || t->stage == Stage::AT_TABLE ||
+                                    t->stage == Stage::ASSIGNED)) {
+      r.stuck_alerted = true;
+      if (t->kind == TaskKind::SERVE)
+        alert("ERROR", r.id, "음식을 실은 채 멈췄어요 (" + t->table + "). 직원이 직접 전달해 주세요");
+      else
+        alert("ERROR", r.id, "안내 중 멈췄어요 (" + t->table + "). 직원이 손님을 안내해 주세요");
+    }
+  }
+}
+
+void TaskManager::unassign(Task& t, const std::string& why) {
+  std::string old = t.robot;
+  if (t.pending != Confirm::NONE) closeConfirm(t, "REASSIGN");
+  Robot* r = findRobot(old);
+  if (r && r->task_id == t.id) {
+    r->task_id = -1;
+    traffic_.clearGoal(old);  // 다시 살아나면 sendIdleRobotsHome이 도킹으로 보낸다
+  }
+  t.robot = "";
+  t.goal_node = "";
+  t.need_dock = false;
+  enterStage(t, Stage::WAITING);  // 묶음 작업도 같이 WAITING
+  for (int id : t.riders) {
+    Task* o = findTask(id);
+    if (o) o->lead = -1;
+  }
+  t.riders.clear();
+  alert("WARN", old, "task " + std::to_string(t.id) + " (" + t.table + ") " + why + " " +
+                         std::to_string(cfg_.reassign_after_sec) + "초 -> 다른 로봇에 다시 배정할게요");
+}
+
+// 묶음 작업: 앞장 작업의 단계만 따라간다 (이동 · 확인 버튼 · 로봇 풀기는 앞장 작업이 함)
+void TaskManager::mirrorStage(Task& o, Stage s, const Task& lead) {
+  o.stage = s;
+  o.robot = lead.robot;
+  if (isEnded(s)) o.ended_at = Clock::now();
+  db_.saveTask(view(o));
+  record("TASK", "task " + std::to_string(o.id) + " " + o.table + " " + toString(o.kind) + " -> " + toString(s) +
+                     (o.robot.empty() ? "" : " (" + o.robot + ")") + " 묶음 task " + std::to_string(lead.id));
+  if (client_) client_->pushTaskUpdate(view(o));
+  dirty_ = true;
 }
 
 // 단계가 바뀔 때는 항상 여기를 지난다
@@ -544,6 +777,10 @@ void TaskManager::enterStage(Task& t, Stage s) {
                      " -> " + toString(s) + (t.robot.empty() ? "" : " (" + t.robot + ")"));
   if (client_ && t.kind == TaskKind::SERVE) client_->pushTaskUpdate(view(t));
   dirty_ = true;
+  for (int id : t.riders) {  // 같이 실은 작업도 같은 단계로
+    Task* o = findTask(id);
+    if (o && !isEnded(o->stage)) mirrorStage(*o, s, t);
+  }
 
   // 끝난 단계: 확인 버튼 닫고, 예약한 테이블 풀고, 로봇 풀어 주기
   if (isEnded(s)) {
@@ -566,8 +803,13 @@ void TaskManager::enterStage(Task& t, Stage s) {
     case Stage::TO_PICKUP: goTo(t, pickup_node_); break;
     case Stage::TO_TABLE: goTo(t, t.table_node); break;
     case Stage::TO_DOCK: {
-      std::string dock = dispatch_.pickDock(t.robot, entranceOk(t.robot));
-      if (dock.empty()) dock = dispatch_.pickDock(t.robot, true);
+      // 작업이 끝날 때마다 배터리 확인: 낮으면 충전 (이어받기 · 입구 대기 안 함)
+      Robot* r = findRobot(t.robot);
+      if (r && cfg_.min_battery_pct > 0 && !r->charging && r->battery < cfg_.min_battery_pct) {
+        r->charging = true;
+        alert("INFO", r->id, "배터리 " + std::to_string(static_cast<int>(r->battery)) + "% - 도킹에서 충전할게요");
+      }
+      std::string dock = pickDockFor(t.robot);
       if (dock.empty()) {
         t.need_dock = true;  // retryDocks에서 다시 시도
         display(t.robot, stageText(t, s), 0);

@@ -243,7 +243,7 @@ void ClientLinkManager::setupRoutes() {
     j["board"]["w"] = cfg_.board_w;
     j["board"]["h"] = cfg_.board_h;
     for (const MapNodeView& n : tasks_.mapView().nodes) {
-      if (n.id == cfg_.entrance_dock) {
+      if (!cfg_.entrance_docks.empty() && n.id == cfg_.entrance_docks.front()) {
         j["entrance"]["x"] = n.x;
         j["entrance"]["y"] = n.y;
       }

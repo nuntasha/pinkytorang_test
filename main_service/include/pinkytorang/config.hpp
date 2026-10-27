@@ -1,6 +1,7 @@
 // 설정 파일 (config/main_service.yaml)
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -40,11 +41,21 @@ struct Config {
   int table_timeout_sec = 30;    // 서빙: 손님 수령 카운트다운
   int guide_timeout_sec = 15;    // 안내: 착석 확인 카운트다운
   int depart_grace_sec = 2;      // 카운트다운 0 이후 실제 출발까지
-  int max_active_serve = 2;      // 동시에 서빙하는 로봇 최대 수
+  int max_active_serve = 2;      // 빈 테이블이 있을 때 동시에 서빙하는 로봇 최대 수 (만석이면 로봇 수 전부)
+  int max_active_guide = 1;      // 동시에 안내하는 로봇 최대 수
+  int serve_batch_max = 3;       // 같은 테이블 주문을 한 번에 싣는 최대 건수
+  int reassign_after_sec = 10;   // 적재 전 로봇이 이만큼 고장 · 통신 끊김이면 다른 로봇에 다시 배정
 
-  // 안내
-  std::string entrance_dock = "D1";     // 손님을 맞는 입구 도킹 (안내는 여기 있는 로봇만)
+  // 도킹 구역
+  std::vector<std::string> entrance_docks = {"D2", "D1"};  // 입구 쪽 (앞칸부터). 안내는 여기 서 있는 로봇만
+  std::vector<std::string> pickup_docks = {"D3", "D4"};    // 픽업 쪽
+  std::map<std::string, std::string> dock_via;              // 뒤칸 -> 앞칸 (D1: D2 = D1은 D2를 지나 드나듦)
   double entrance_keep_penalty_m = 1.5; // 서빙 배정 때 입구 로봇에 더하는 비용 (입구 로봇을 아끼려고)
+
+  // 대기 배치: 찬 테이블(사용 중 + 안내 중) 수에 따라 입구에 세워 둘 로봇 수. 만석이면 0
+  int busy_tables = 4;           // 이 수 이상 차면 바쁨
+  int entrance_standby_quiet = 2;
+  int entrance_standby_busy = 1;
 
   // 배터리 (%). min_battery_pct = 0 이면 검사 안 함
   double min_battery_pct = 30.0;   // 이보다 낮으면 작업 배정 안 하고 충전
