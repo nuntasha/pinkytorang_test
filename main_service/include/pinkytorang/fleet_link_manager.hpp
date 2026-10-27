@@ -1,4 +1,4 @@
-// Fleet Link Manager: 로봇과 ROS 2 토픽으로 통신 (fleet_msgs v4)
+// Fleet Link Manager: 로봇과 ROS 2 토픽으로 통신 (fleet_msgs v5)
 // - 서버 쪽 토픽 이름: /pinky1/fleet/{move,control,display,state,event}
 // - 받은 메시지는 Task Manager 함수로 넘긴다. 통신 끊김은 감지만 하고 처리는 Task Manager가 한다
 #pragma once

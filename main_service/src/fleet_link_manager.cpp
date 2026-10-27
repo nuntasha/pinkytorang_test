@@ -7,7 +7,7 @@
 namespace pinky {
 
 FleetLinkManager::FleetLinkManager(rclcpp::Node::SharedPtr node, const Config& cfg) : node_(node), cfg_(cfg) {
-  // QoS: fleet_msgs v4 README 2.3
+  // QoS: fleet_msgs v5 README 2.3
   rclcpp::QoS reliable = rclcpp::QoS(10).reliable();
   rclcpp::QoS display_qos = rclcpp::QoS(1).reliable().transient_local();  // 늦게 켜진 로봇도 마지막 화면을 받음
   rclcpp::QoS state_qos = rclcpp::QoS(1).best_effort();                  // 자주 오니 하나 빠져도 괜찮음
@@ -39,13 +39,13 @@ void FleetLinkManager::sendMove(const std::string& robot_id, const MoveCmd& cmd)
   fleet_msgs::msg::Move msg;
   msg.cmd_id = cmd.cmd_id;
   msg.mode = cmd.append ? fleet_msgs::msg::Move::APPEND : fleet_msgs::msg::Move::REPLACE;
+  msg.drive = (cmd.drive == Drive::REVERSE) ? fleet_msgs::msg::Move::REVERSE : fleet_msgs::msg::Move::FORWARD;
   for (const WaypointCmd& w : cmd.waypoints) {
     fleet_msgs::msg::Waypoint wp;
     wp.node_id = w.node_id;
     wp.x = w.x;
     wp.y = w.y;
     wp.yaw = w.yaw;
-    wp.reverse = w.reverse;
     msg.waypoints.push_back(wp);
   }
   links_[robot_id].move_pub->publish(msg);

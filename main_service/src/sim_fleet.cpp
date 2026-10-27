@@ -42,14 +42,15 @@ void SimFleet::sendMove(const std::string& robot_id, const MoveCmd& cmd) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!bots_.count(robot_id)) return;
   Bot& b = bots_[robot_id];
+  bool rev = (cmd.drive == Drive::REVERSE);
   if (cmd.append) {
     if (cmd.cmd_id != b.cmd_id) return;  // 다른 명령에 붙이려는 APPEND는 무시
-    for (const WaypointCmd& w : cmd.waypoints) b.path.push_back(w);
   } else {
-    b.path = cmd.waypoints;  // REPLACE: 경로 교체
+    b.path.clear();  // REPLACE: 경로 교체
     b.cmd_id = cmd.cmd_id;
     b.dock_wait = 0.0;
   }
+  for (const WaypointCmd& w : cmd.waypoints) b.path.push_back({w, rev});
   b.running = true;
 }
 
@@ -93,14 +94,15 @@ void SimFleet::step(Bot& b, double dt, std::vector<PendingEvent>& out) {
 
   double move = speed_ * dt;  // 이번에 갈 수 있는 거리
   while (move > 0.0 && !b.path.empty()) {
-    WaypointCmd w = b.path.front();
+    WaypointCmd w = b.path.front().w;
+    bool rev = b.path.front().reverse;
     double dx = w.x - b.x;
     double dy = w.y - b.y;
     double d = std::hypot(dx, dy);
     if (d > move) {  // 아직 못 닿음
       b.x += dx / d * move;
       b.y += dy / d * move;
-      b.yaw = w.reverse ? std::atan2(-dy, -dx) : std::atan2(dy, dx);
+      b.yaw = rev ? std::atan2(-dy, -dx) : std::atan2(dy, dx);
       return;
     }
     // 노드 도착
@@ -114,7 +116,7 @@ void SimFleet::step(Bot& b, double dt, std::vector<PendingEvent>& out) {
     if (b.path.empty()) {  // 명령의 마지막 노드
       b.yaw = w.yaw;
       const MapNode* n = map_.node(w.node_id);
-      if (n && n->stop_kind == "DOCK") {
+      if (n && (n->stop_kind == "DOCK" || n->stop_kind == "PICKUP")) {  // 정밀 정차 (마커 / 테이프)
         b.dock_wait = 1.0;
       } else {
         b.running = false;

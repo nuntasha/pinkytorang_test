@@ -1,4 +1,4 @@
-// Traffic Manager: 경로 + 노드 lock (fleet_msgs v4 README 4장)
+// Traffic Manager: 경로 + 노드 lock (fleet_msgs v5 README 4장)
 //
 // 로봇마다 경로를 세 덩어리로 들고 있다
 //   at        : 마지막으로 도착한 노드 (lock 보유)
@@ -10,7 +10,8 @@
 //   2. 노드 N의 lock은 로봇이 N 다음 노드에 도착하면 푼다
 //   3. 양방향 구간: 구간을 따라 지나갈 노드 + 빠져나가는 끝 노드(또는 도킹)까지 한 번에. 하나라도 못 잡으면 안 잡음
 //   4. no_wait 노드: 그 다음 lock 노드까지 함께 잡을 수 있을 때만
-//   5. 포켓(테이블 · 도킹)에서 나올 때 첫 Waypoint는 reverse = true
+//   5. Move 하나에는 방향(drive) 하나. 후진 구간(yaml reverse) · 포켓에서 나오는 첫 칸은 후진,
+//      방향이 바뀌는 노드에서 Move를 나눠 보낸다 (뒤쪽은 같은 cmd_id로 APPEND)
 //   6. 로봇이 명령 수행 중이면 APPEND(같은 cmd_id), 끝났으면 REPLACE(새 cmd_id)
 //   7. 다음 칸(노드)을 잡을 때 그 칸으로 가는 길(엣지)도 같이 잡는다. 양방향 길에서 마주 오는 로봇이 같은 길에 못 들어온다
 //   8. 앞이 막히면 우회 경로를 찾는다
@@ -110,6 +111,7 @@ class TrafficManager {
   void checkArrival(Robot& r);
   void publish(Robot& r, const std::vector<std::string>& nodes, bool append, bool reverse_first);
   double yawFor(const std::vector<std::string>& seq, size_t i, const std::string& before) const;
+  double faceYaw(const std::string& a, const std::string& b) const;  // a -> b 갈 때 로봇 앞 방향
   void releaseLock(const std::string& node, const std::string& id);
 
   const Config& cfg_;

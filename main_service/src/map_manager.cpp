@@ -13,16 +13,21 @@ static bool contains(const std::vector<std::string>& v, const std::string& s) {
 }
 
 // node_graph.yaml 형식 (v7)
-//   nodes : {id, x, y}  + 정차점이면 kind(QUEUE/PICKUP/SERVE/DOCK), 도킹이면 yaw
+//   nodes : {id, x, y}  + 정차점이면 kind(QUEUE/PICKUP/SERVE/DOCK)
+//           yaw는 방향이 정해진 정차점만 (도킹 필수, 픽업처럼 돌아서 대는 곳도 적음)
 //           lock은 기본 true (코너만 lock: false), pocket · no_wait는 필요할 때만
 //           SERVE 노드의 테이블 이름은 id와 같다 (다르면 table: 로 따로 적음)
 //   edges : 양방향 길. [A, B, C] = A-B, B-C 를 양쪽으로
 //   oneway: 일방통행 길. [A, B, C] = A->B->C
+//   reverse (선택): 후진 구간. [A, B, C] = A->B, B->C 를 후진으로 (길은 edges / oneway에 있어야 함)
+//                   첫 노드 · 끝 노드는 lock 노드 (방향을 바꾸며 회전하는 곳)
 //   two_way_zones (선택): 들어갈 때 한 번에 잡는 1차선 구간
 bool MapManager::load(const std::string& path, std::string& error) {
   nodes_.clear();
   index_.clear();
   zones_.clear();
+  reverse_edges_.clear();
+  std::vector<std::vector<std::string>> reverse_chains;
   std::vector<std::string> problems;
 
   // a -> b 길 추가 (같은 길 두 번은 무시)
@@ -76,6 +81,9 @@ bool MapManager::load(const std::string& path, std::string& error) {
         for (size_t i = 1; i < chain.size(); ++i) addNext(chain[i - 1], chain[i]);
       }
     }
+    if (root["reverse"]) {
+      for (const YAML::Node& e : root["reverse"]) reverse_chains.push_back(e.as<std::vector<std::string>>());
+    }
     if (root["two_way_zones"]) {
       for (const YAML::Node& z : root["two_way_zones"]) {
         TwoWayZone tz;
@@ -101,6 +109,25 @@ bool MapManager::load(const std::string& path, std::string& error) {
     for (const std::string& id : z.nodes) {
       if (!index_.count(id)) problems.push_back("구간 " + z.id + ": 없는 노드 " + id);
     }
+  }
+  for (const std::vector<std::string>& chain : reverse_chains) {
+    if (chain.size() < 2) {
+      problems.push_back("후진 구간: 노드가 2개 이상이어야 함");
+      continue;
+    }
+    bool ok = true;
+    for (size_t i = 1; i < chain.size(); ++i) {
+      const MapNode* a = node(chain[i - 1]);
+      if (!a || !node(chain[i]) || !contains(a->next, chain[i])) {
+        problems.push_back("후진 구간: 없는 길 " + chain[i - 1] + " -> " + chain[i]);
+        ok = false;
+      }
+    }
+    if (!ok) continue;
+    // 방향이 바뀌는 첫 · 끝 노드에서 Move를 끊으므로 lock 노드여야 한다
+    if (!node(chain.front())->lock) problems.push_back("후진 구간: 시작 " + chain.front() + "이 lock 노드가 아님");
+    if (!node(chain.back())->lock) problems.push_back("후진 구간: 끝 " + chain.back() + "이 lock 노드가 아님");
+    for (size_t i = 1; i < chain.size(); ++i) reverse_edges_.insert({chain[i - 1], chain[i]});
   }
   if (nodesOfKind("PICKUP").empty()) problems.push_back("PICKUP 노드 없음");
   if (nodesOfKind("DOCK").empty()) problems.push_back("DOCK 노드 없음");
@@ -132,6 +159,10 @@ std::vector<std::string> MapManager::nodesOfKind(const std::string& kind) const 
     if (m.stop_kind == kind) out.push_back(m.id);
   }
   return out;
+}
+
+bool MapManager::isReverseEdge(const std::string& a, const std::string& b) const {
+  return reverse_edges_.count({a, b}) > 0;
 }
 
 bool MapManager::inZone(const std::string& id) const {

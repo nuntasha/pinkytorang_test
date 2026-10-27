@@ -34,13 +34,18 @@ class SimFleet : public IFleetOut {
   void sendDisplay(const std::string& robot_id, const DisplayCmd& cmd) override;
 
  private:
+  struct PathPoint {
+    WaypointCmd w;
+    bool reverse = false;  // 이 노드까지 후진 (받은 Move의 drive)
+  };
+
   struct Bot {
     std::string id;
     double x = 0.0, y = 0.0, yaw = 0.0;
     std::string last_node;
     uint32_t cmd_id = 0;
     bool running = false;            // 명령 수행 중
-    std::vector<WaypointCmd> path;   // 남은 Waypoint
+    std::vector<PathPoint> path;     // 남은 Waypoint (+ 그 칸을 후진으로 가는지)
     bool paused = false;
     double dock_wait = 0.0;          // 남은 정밀 도킹 시간 (초)
     double battery = 90.0;           // %

@@ -3,7 +3,7 @@
 <package format="3">
   <name>pinkytorang_main</name>
   <version>0.1.0</version>
-  <description>핑키토랑 Main Service: 작업 관리 · 로봇 배정 · 노드 lock 교통 관제 · UI 연결 (fleet_msgs v4)</description>
+  <description>핑키토랑 Main Service: 작업 관리 · 로봇 배정 · 노드 lock 교통 관제 · UI 연결 (fleet_msgs v5)</description>
   <maintainer email="sm990627@gmail.com">pinkytorang</maintainer>
   <license>Apache-2.0</license>
 

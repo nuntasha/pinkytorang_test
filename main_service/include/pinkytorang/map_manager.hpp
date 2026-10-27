@@ -1,11 +1,12 @@
 // Map Manager: node_graph.yaml 읽기 · 검사 · 길 찾기
-// 파일은 nodes(점) + edges(양방향 길) + oneway(일방통행 길)로 나뉜다 (자세한 형식은 map_manager.cpp load 위)
+// 파일은 nodes(점) + edges(양방향 길) + oneway(일방통행 길) + reverse(후진 구간)로 나뉜다 (자세한 형식은 map_manager.cpp load 위)
 // 노드 성격은 ID 글자가 아니라 필드(kind, lock, no_wait, pocket)로만 판단한다
 #pragma once
 
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "pinkytorang/types.hpp"
@@ -43,6 +44,9 @@ class MapManager {
   std::string tableNode(const std::string& table) const;            // 없으면 ""
   std::vector<std::string> nodesOfKind(const std::string& kind) const;
 
+  // 후진 구간 (yaml reverse): a -> b 길을 후진으로 가는지
+  bool isReverseEdge(const std::string& a, const std::string& b) const;
+
   // 양방향 구간
   bool inZone(const std::string& id) const;
   bool isZoneEdge(const std::string& a, const std::string& b) const;  // a, b가 같은 구간 안
@@ -64,6 +68,7 @@ class MapManager {
   std::vector<MapNode> nodes_;
   std::map<std::string, int> index_;  // id -> nodes_ 위치
   std::vector<TwoWayZone> zones_;
+  std::set<std::pair<std::string, std::string>> reverse_edges_;  // (a, b) = a -> b 후진
 };
 
 }  // namespace pinky
