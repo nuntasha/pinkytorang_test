@@ -3,6 +3,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,9 @@ class MapManager {
 
   // 길 찾기 (다익스트라). 경로가 없으면 빈 vector
   std::vector<std::string> shortestPath(const std::string& from, const std::string& to) const;
+  // ban 노드는 지나가지 않는다 (from · to는 예외). 우회 경로 찾기용
+  std::vector<std::string> shortestPathAvoid(const std::string& from, const std::string& to,
+                                             const std::set<std::string>& ban) const;
   double pathLength(const std::vector<std::string>& path) const;
   double distance(const std::string& a, const std::string& b) const;
   double heading(const std::string& from, const std::string& to) const;

@@ -141,6 +141,11 @@ double MapManager::heading(const std::string& from, const std::string& to) const
 
 // 다익스트라: 아직 확정 안 된 노드 중 가장 가까운 것을 하나씩 확정하면서 이웃 거리를 갱신
 std::vector<std::string> MapManager::shortestPath(const std::string& from, const std::string& to) const {
+  return shortestPathAvoid(from, to, std::set<std::string>());
+}
+
+std::vector<std::string> MapManager::shortestPathAvoid(const std::string& from, const std::string& to,
+                                                       const std::set<std::string>& ban) const {
   std::vector<std::string> path;
   if (!node(from) || !node(to)) return path;
   if (from == to) {
@@ -167,6 +172,7 @@ std::vector<std::string> MapManager::shortestPath(const std::string& from, const
     if (u.empty() || u == to) break;
     done.insert(u);
     for (const std::string& v : node(u)->next) {
+      if (v != to && ban.count(v)) continue;  // 막힌 노드는 건너뜀
       double d = dist[u] + distance(u, v);
       if (d < dist[v]) {
         dist[v] = d;

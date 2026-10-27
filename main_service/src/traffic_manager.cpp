@@ -1,6 +1,7 @@
 #include "pinkytorang/traffic_manager.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <ctime>
 
 #include "pinkytorang/log.hpp"
@@ -18,6 +19,10 @@ static std::string join(const std::vector<std::string>& v) {
     s += v[i];
   }
   return s;
+}
+
+std::string TrafficManager::edgeKey(const std::string& a, const std::string& b) {
+  return (a < b) ? a + "|" + b : b + "|" + a;  // 양방향이라 방향 없이 하나로
 }
 
 TrafficManager::TrafficManager(const Config& cfg, const MapManager& map) : cfg_(cfg), map_(map) {
@@ -96,6 +101,9 @@ bool TrafficManager::setGoal(const std::string& id, const std::string& node) {
   }
   r.goal = node;
   r.plan.clear();
+  r.via = "";
+  r.avoid.clear();
+  r.waiting = false;
   logLine("TRAFFIC", id + " 목적지 " + node);
   checkArrival(r);              // 이미 거기 있으면 바로 도착
   if (!r.goal.empty()) tryExtend(r);
@@ -106,6 +114,8 @@ void TrafficManager::clearGoal(const std::string& id) {
   Robot& r = robots_[id];
   r.goal = "";
   r.plan.clear();
+  r.via = "";
+  r.waiting = false;
 }
 
 bool TrafficManager::isStationary(const std::string& id) const {
@@ -125,6 +135,8 @@ void TrafficManager::checkArrival(Robot& r) {
   logLine("TRAFFIC", r.id + " 도착 " + r.at);
   r.goal = "";
   r.plan.clear();
+  r.via = "";
+  r.waiting = false;
 }
 
 std::vector<Arrival> TrafficManager::takeArrivals() {
@@ -150,6 +162,10 @@ void TrafficManager::onNodeReached(const std::string& id, const std::string& nod
     r.committed.erase(r.committed.begin());
     // 규칙 2: 다음 노드에 도착했으니 이전 노드 lock 해제 (같은 노드를 또 지나갈 예정이면 유지)
     if (prev != r.at && !contains(r.committed, prev)) releaseLock(prev, id);
+    // 규칙 7: 지나온 길(엣지)도 해제
+    auto e = edge_lock_.find(edgeKey(prev, r.at));
+    if (e != edge_lock_.end() && e->second == id) edge_lock_.erase(e);
+    if (r.at == r.via) r.via = "";  // 비켜 준 칸에 도착
     if (r.at == node) break;
   }
   tick();  // 풀린 lock을 기다리던 로봇이 있을 수 있다
@@ -259,16 +275,129 @@ std::vector<std::string> TrafficManager::buildSegment(const Robot& r) const {
   return seg;
 }
 
-bool TrafficManager::canLock(const std::vector<std::string>& seg, const std::string& id, std::string& blocker) const {
+// seg의 노드와, 거기로 가는 길(엣지)이 전부 비었는지. 막혔으면 막은 노드 · 로봇을 알려 준다
+bool TrafficManager::canLock(const Robot& r, const std::vector<std::string>& seg, std::string& blocker,
+                             std::string& blocker_robot, std::string& blocked_node) const {
+  std::string prev = lastSent(r);
   for (const std::string& n : seg) {
-    if (!map_.node(n)->lock) continue;
-    auto it = lock_.find(n);
-    if (it != lock_.end() && it->second != id) {
-      blocker = n + "(" + it->second + ")";
+    auto e = edge_lock_.find(edgeKey(prev, n));
+    if (e != edge_lock_.end() && e->second != r.id) {
+      blocker = prev + "-" + n + " 길(" + e->second + ")";
+      blocker_robot = e->second;
+      blocked_node = n;
       return false;
     }
+    if (map_.node(n)->lock) {
+      auto it = lock_.find(n);
+      if (it != lock_.end() && it->second != r.id) {
+        blocker = n + "(" + it->second + ")";
+        blocker_robot = it->second;
+        blocked_node = n;
+        return false;
+      }
+    }
+    prev = n;
   }
   return true;
+}
+
+// 보낸 경로 끝에서 목적지까지. 우회 중이면 막힌 노드를 빼고, 비켜 주는 중이면 옆 칸을 먼저 들른다
+std::vector<std::string> TrafficManager::planPath(const Robot& r) const {
+  std::string from = lastSent(r);
+  std::set<std::string> ban;
+  if (!r.avoid.empty() && Clock::now() < r.avoid_until) ban = r.avoid;
+
+  if (!r.via.empty() && r.via != from) {
+    std::vector<std::string> a = map_.shortestPathAvoid(from, r.via, ban);
+    std::vector<std::string> b = map_.shortestPathAvoid(r.via, r.goal, ban);
+    if (b.empty()) b = map_.shortestPath(r.via, r.goal);
+    if (!a.empty() && !b.empty()) {
+      a.insert(a.end(), b.begin() + 1, b.end());
+      return a;
+    }
+  }
+  std::vector<std::string> path = map_.shortestPathAvoid(from, r.goal, ban);
+  if (path.empty()) path = map_.shortestPath(from, r.goal);  // 우회 길이 사라졌으면 원래 길
+  return path;
+}
+
+// 서로 기다리는 고리가 있나 (A가 B를, B가 A를 기다림 또는 더 긴 고리)
+bool TrafficManager::inWaitCycle(const std::string& start) const {
+  std::string cur = start;
+  for (size_t step = 0; step <= robots_.size(); ++step) {
+    auto it = robots_.find(cur);
+    if (it == robots_.end() || !it->second.waiting || it->second.waiting_for.empty()) return false;
+    cur = it->second.waiting_for;
+    if (cur == start) return true;
+  }
+  return false;
+}
+
+// 교착인데 우회 길도 없으면: 지금 서 있는 노드 옆의 빈 칸으로 비켜 준다 (상대가 지나갈 노드는 피함)
+bool TrafficManager::sideStep(Robot& r, const Robot& other) {
+  if (!r.committed.empty() || r.cmd_active) return false;  // 서 있을 때만
+  const MapNode* here = map_.node(r.at);
+  for (const std::string& n : here->next) {
+    if (map_.node(n)->stop_kind == "DOCK") continue;
+    if (lock_.count(n) && lock_[n] != r.id) continue;
+    if (edge_lock_.count(edgeKey(r.at, n))) continue;
+    if (contains(other.committed, n) || contains(other.plan, n) || n == other.goal) continue;
+    r.via = n;
+    logLine("TRAFFIC", r.id + " 교착 -> " + n + " 로 비켜 줌 (" + other.id + " 먼저)");
+    return true;
+  }
+  return false;
+}
+
+// 막혔을 때 우회할지 기다릴지 정한다. 우회(또는 비켜 주기)를 정했으면 true
+bool TrafficManager::resolveBlock(Robot& r, const std::string& blocker_robot, const std::string& blocked_node,
+                                  const std::vector<std::string>& path) {
+  Clock::time_point now = Clock::now();
+  if (!r.waiting || r.waiting_for != blocker_robot) {
+    r.waiting = true;
+    r.waiting_for = blocker_robot;
+    r.wait_since = now;
+  }
+  const Robot& b = robots_[blocker_robot];
+  bool parked = b.goal.empty() || b.hold;   // 앞 로봇이 일하는 중이거나 멈춤 -> 금방 안 비킴
+  bool cycle = inWaitCycle(r.id);
+  double waited = std::chrono::duration<double>(now - r.wait_since).count();
+  std::string target = r.via.empty() ? r.goal : r.via;
+
+  // 다른 로봇이 잡고 있는 노드를 전부 빼고 다시 찾아 본다 (막힌 노드가 목적지 자체면 우회 불가)
+  if (blocked_node != target) {
+    std::set<std::string> ban;
+    for (const auto& pair : lock_) {
+      if (pair.second != r.id) ban.insert(pair.first);
+    }
+    ban.insert(blocked_node);
+    std::vector<std::string> alt = map_.shortestPathAvoid(lastSent(r), target, ban);
+    bool alt_ok = alt.size() >= 2 && !contains(alt, blocked_node);
+    if (alt_ok) {
+      double extra = map_.pathLength(alt) - map_.pathLength(path);
+      bool go = parked || cycle || extra <= cfg_.detour_max_m || waited >= cfg_.detour_wait_sec;
+      if (go) {
+        r.avoid = ban;
+        r.avoid_until = now + std::chrono::milliseconds(static_cast<int>(cfg_.avoid_sec * 1000));
+        r.waiting = false;
+        char buf[160];
+        snprintf(buf, sizeof(buf), " 우회 (+%.2f m, %s 때문, %s)", extra, blocker_robot.c_str(),
+                 parked ? "상대가 서 있음" : cycle ? "교착" : waited >= cfg_.detour_wait_sec ? "오래 기다림" : "짧은 우회");
+        logLine("TRAFFIC", r.id + buf);
+        return true;
+      }
+    }
+  }
+  // 교착인데 우회 길도 없으면 한 대가 비켜 준다 (이름이 뒤인 로봇 먼저, 못 비키면 상대가)
+  if (cycle && r.via.empty()) {
+    if (r.id > blocker_robot || b.via.empty()) {
+      if (sideStep(r, b)) {
+        r.waiting = false;
+        return true;
+      }
+    }
+  }
+  return false;  // 기다림
 }
 
 bool TrafficManager::tryExtend(Robot& r) {
@@ -277,17 +406,23 @@ bool TrafficManager::tryExtend(Robot& r) {
   bool was_empty = r.committed.empty();
   std::vector<std::string> batch;
 
+  int resolves = 0;
   while (committedLockCount(r) < cfg_.lock_lookahead) {
     // 보낸 경로 끝에서 목적지까지 다시 계산 (늦게 결정)
-    std::vector<std::string> path = map_.shortestPath(lastSent(r), r.goal);
+    std::vector<std::string> path = planPath(r);
     if (path.size() <= 1) break;
     r.plan.assign(path.begin() + 1, path.end());
 
     std::vector<std::string> seg = buildSegment(r);
     if (seg.empty()) break;
 
-    std::string blocker;
-    if (!canLock(seg, r.id, blocker)) {
+    std::string blocker, blocker_robot, blocked_node;
+    if (!canLock(r, seg, blocker, blocker_robot, blocked_node)) {
+      // 규칙 8: 우회할지 기다릴지 (한 번 호출에 두 번까지만 다시 계산)
+      if (resolves < 2 && resolveBlock(r, blocker_robot, blocked_node, path)) {
+        resolves++;
+        continue;
+      }
       std::string msg = "[" + join(seg) + "] 대기, " + blocker + " 사용 중";
       if (msg != r.last_wait_log) {  // 같은 로그 반복 방지
         logLine("TRAFFIC", r.id + " " + msg);
@@ -295,12 +430,17 @@ bool TrafficManager::tryExtend(Robot& r) {
       }
       break;
     }
-    // 전부 비었으니 한 번에 잡는다
+    // 전부 비었으니 한 번에 잡는다 (노드 + 그 노드로 가는 길)
+    std::string prev = lastSent(r);
     for (const std::string& n : seg) {
       if (map_.node(n)->lock) lock_[n] = r.id;
+      edge_lock_[edgeKey(prev, n)] = r.id;
+      prev = n;
       r.committed.push_back(n);
       batch.push_back(n);
     }
+    r.waiting = false;
+    r.waiting_for = "";
     r.plan.erase(r.plan.begin(), r.plan.begin() + static_cast<long>(seg.size()));
     r.last_wait_log = "";
   }
@@ -316,7 +456,8 @@ bool TrafficManager::tryExtend(Robot& r) {
 // 노드에서 바라볼 방향: STOP 노드는 yaml 값, PASS 노드는 다음 노드 쪽
 double TrafficManager::yawFor(const std::vector<std::string>& seq, size_t i, const std::string& before) const {
   const MapNode* n = map_.node(seq[i]);
-  if (n->has_yaw) return n->yaw;
+  // 도킹은 정해진 방향. 테이블 · 픽업 정차점은 양방향 길 위에 있으니 들어온 방향 그대로
+  if (n->has_yaw && n->stop_kind == "DOCK") return n->yaw;
   if (i + 1 < seq.size()) return map_.heading(seq[i], seq[i + 1]);
   std::string prev = (i > 0) ? seq[i - 1] : before;
   if (!prev.empty() && prev != seq[i]) return map_.heading(prev, seq[i]);

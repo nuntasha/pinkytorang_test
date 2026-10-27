@@ -4,7 +4,7 @@
 http_port: 8080
 web_root: ../../web             # pinkytorang/web (고객 · 매장 · 입구 키오스크 UI)
 db_path: ../pinkytorang.db      # 없으면 새로 만든다
-node_graph: node_graph.yaml     # 노드 그래프 v6.2 (그림: node_map_v6.png, 맵 바뀌면 이 파일 교체)
+node_graph: node_graph.yaml     # 노드 그래프 v7 양방향, 픽업 통로만 일방통행 (그림: node_map_v7.png). 비교용 일방통행: node_graph_oneway.yaml
 
 board_w: 2.28                   # 맵 크기 (m), UI 그림용
 board_h: 1.82
@@ -25,10 +25,12 @@ entrance_keep_penalty_m: 1.5    # 서빙 배정 때 입구 로봇에 더하는 �
 # ---- 테이블 (id = node_graph의 table 값). 손님이 입구 키오스크 배치도에서 빈 테이블을 직접 고른다
 #      x, y = 배치도에 그릴 테이블 중심 (m, 맵 좌표 · 원점 왼쪽 아래), w, h = 크기 (m, 안 쓰면 0.165 × 0.110)
 tables:
-  - {id: T1, x: 0.765, y: 1.335}   # 왼쪽 위
-  - {id: T2, x: 1.385, y: 1.335}   # 오른쪽 위
-  - {id: T3, x: 0.765, y: 0.705}   # 왼쪽 아래
-  - {id: T4, x: 1.385, y: 0.705}   # 오른쪽 아래
+  - {id: T1, x: 0.765, y: 1.765}   # 위쪽 벽 쪽 왼쪽
+  - {id: T2, x: 1.385, y: 1.765}   # 위쪽 벽 쪽 오른쪽
+  - {id: T3, x: 0.765, y: 1.335}   # 가운데 줄 왼쪽
+  - {id: T4, x: 1.385, y: 1.335}   # 가운데 줄 오른쪽
+  - {id: T5, x: 0.765, y: 0.705}   # 아래 줄 왼쪽
+  - {id: T6, x: 1.385, y: 0.705}   # 아래 줄 오른쪽
 
 # ---- 배터리 (%) : 로봇 fleet/state 의 battery 값. 0 으로 두면 검사 안 함
 min_battery_pct: 30             # 이보다 낮으면 새 작업 안 주고 도킹에서 충전
@@ -40,6 +42,9 @@ require_dock_start: true        # 로봇은 도킹 위에서 켠다. 처음 위�
 # ---- 교통
 comm_timeout_sec: 3.0           # fleet/state가 이만큼 안 오면 통신 끊김
 lock_lookahead: 2               # 로봇 앞쪽으로 미리 잡는 lock 노드 수
+detour_max_m: 1.0               # 앞 로봇이 움직이는 중이면 우회가 이만큼(m) 이하로 길어질 때만 돌아감, 아니면 기다림
+detour_wait_sec: 8              # 이만큼 기다려도 안 풀리면 길이 상관없이 우회
+avoid_sec: 6                    # 우회를 정하면 막힌 노드를 이 시간 동안 경로 계산에서 뺌
 localize_radius_m: 0.15         # last_node가 비어 있을 때 좌표로 노드 찾는 반경
 
 # ---- UI

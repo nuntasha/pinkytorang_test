@@ -53,6 +53,9 @@ struct Config {
   bool require_dock_start = true;  // 처음 위치는 도킹 노드에서만 인정
   double comm_timeout_sec = 3.0; // state가 이만큼 안 오면 통신 끊김
   int lock_lookahead = 2;        // 로봇 앞으로 미리 잡아 두는 lock 노드 수
+  double detour_max_m = 1.0;     // 앞 로봇이 움직이는 중이면, 우회가 이만큼(m) 이하로 길어질 때만 돌아간다
+  double detour_wait_sec = 8.0;  // 이만큼 기다려도 안 풀리면 길이 상관없이 우회
+  double avoid_sec = 6.0;        // 우회를 정하면 막힌 노드를 이 시간 동안 경로 계산에서 뺀다
   double localize_radius_m = 0.15;
   int done_keep_sec = 600;       // 끝난 작업을 매장 화면에 남기는 시간
 

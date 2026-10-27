@@ -330,6 +330,8 @@ void TaskManager::tick() {
   std::lock_guard<std::mutex> lock(mutex_);
   Clock::time_point now = Clock::now();
 
+  traffic_.tick();  // 막혀서 기다리는 로봇: 우회 · 대기 시간 다시 판단
+
   // 테이블 확인 시간 초과 -> 일이 끝난 것으로 보고 출발
   for (auto& pair : tasks_) {
     Task& t = pair.second;

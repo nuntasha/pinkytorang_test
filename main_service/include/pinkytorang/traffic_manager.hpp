@@ -12,9 +12,16 @@
 //   4. no_wait 노드: 그 다음 lock 노드까지 함께 잡을 수 있을 때만
 //   5. 포켓(테이블 · 도킹)에서 나올 때 첫 Waypoint는 reverse = true
 //   6. 로봇이 명령 수행 중이면 APPEND(같은 cmd_id), 끝났으면 REPLACE(새 cmd_id)
+//   7. 다음 칸(노드)을 잡을 때 그 칸으로 가는 길(엣지)도 같이 잡는다. 양방향 길에서 마주 오는 로봇이 같은 길에 못 들어온다
+//   8. 앞이 막히면 우회 경로를 찾는다
+//      - 앞 로봇이 서 있으면(목적지 도착 · 멈춤) 길이 상관없이 우회
+//      - 움직이는 중이면 우회가 detour_max_m 이하로 길어질 때만 우회, 아니면 기다림 (detour_wait_sec 지나면 우회)
+//      - 서로 기다리는 중(교착)이면 우회, 우회 길도 없으면 한 대가 옆 칸으로 비켜 준다
 #pragma once
 
+#include <chrono>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -66,6 +73,8 @@ class TrafficManager {
   double pathCost(const std::string& id, const std::string& target) const;  // 경로 없으면 -1
 
  private:
+  using Clock = std::chrono::steady_clock;
+
   struct Robot {
     std::string id;
     bool localized = false;
@@ -77,12 +86,26 @@ class TrafficManager {
     bool cmd_active = false;   // 로봇이 지금 명령을 수행 중인가
     bool hold = false;
     std::string last_wait_log;
+    // 막혔을 때
+    bool waiting = false;          // 다음 칸을 못 잡고 기다리는 중
+    std::string waiting_for;       // 막고 있는 로봇
+    Clock::time_point wait_since;
+    std::set<std::string> avoid;   // 우회 중: 경로 계산에서 뺄 노드
+    Clock::time_point avoid_until;
+    std::string via;               // 비켜 주기: 먼저 들를 옆 칸 ("" = 없음)
   };
 
   std::string lastSent(const Robot& r) const;
   bool tryExtend(Robot& r);
   std::vector<std::string> buildSegment(const Robot& r) const;
-  bool canLock(const std::vector<std::string>& seg, const std::string& id, std::string& blocker) const;
+  std::vector<std::string> planPath(const Robot& r) const;
+  bool canLock(const Robot& r, const std::vector<std::string>& seg, std::string& blocker, std::string& blocker_robot,
+               std::string& blocked_node) const;
+  bool resolveBlock(Robot& r, const std::string& blocker_robot, const std::string& blocked_node,
+                    const std::vector<std::string>& path);
+  bool inWaitCycle(const std::string& start) const;
+  bool sideStep(Robot& r, const Robot& other);
+  static std::string edgeKey(const std::string& a, const std::string& b);
   int committedLockCount(const Robot& r) const;
   void checkArrival(Robot& r);
   void publish(Robot& r, const std::vector<std::string>& nodes, bool append, bool reverse_first);
@@ -93,7 +116,8 @@ class TrafficManager {
   const MapManager& map_;
   IFleetOut* fleet_ = nullptr;
   std::map<std::string, Robot> robots_;
-  std::map<std::string, std::string> lock_;  // 노드 -> 로봇
+  std::map<std::string, std::string> lock_;       // 노드 -> 로봇
+  std::map<std::string, std::string> edge_lock_;  // "A|B" (이름 순) -> 로봇
   std::vector<Arrival> arrivals_;
   uint32_t next_cmd_id_ = 1;
 };

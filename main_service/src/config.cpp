@@ -36,6 +36,9 @@ bool loadConfig(const std::string& path, Config& cfg, std::string& error) {
     if (root["require_dock_start"]) cfg.require_dock_start = root["require_dock_start"].as<bool>();
     if (root["comm_timeout_sec"]) cfg.comm_timeout_sec = root["comm_timeout_sec"].as<double>();
     if (root["lock_lookahead"]) cfg.lock_lookahead = root["lock_lookahead"].as<int>();
+    if (root["detour_max_m"]) cfg.detour_max_m = root["detour_max_m"].as<double>();
+    if (root["detour_wait_sec"]) cfg.detour_wait_sec = root["detour_wait_sec"].as<double>();
+    if (root["avoid_sec"]) cfg.avoid_sec = root["avoid_sec"].as<double>();
     if (root["localize_radius_m"]) cfg.localize_radius_m = root["localize_radius_m"].as<double>();
     if (root["done_keep_sec"]) cfg.done_keep_sec = root["done_keep_sec"].as<int>();
 
