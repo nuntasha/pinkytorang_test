@@ -34,7 +34,9 @@ struct Config {
   std::string web_root = "../web";
   std::string db_path = "pinkytorang.db";
   std::string node_graph = "config/node_graph.yaml";
-  double board_w = 2.28;
+  double board_x = 0.0;   // 판(UI 배치도) 왼쪽 아래의 map 좌표 (m). SLAM 맵 yaml의 origin
+  double board_y = 0.0;
+  double board_w = 2.28;  // 판 크기 (m)
   double board_h = 1.82;
   std::vector<std::string> robots = {"pinky1", "pinky2", "pinky3"};
 

@@ -101,6 +101,7 @@ bool TrafficManager::setGoal(const std::string& id, const std::string& node) {
     return false;
   }
   r.goal = node;
+  r.route_start = lastSent(r);  // 포켓 출차 방향 판단용 (경로의 출발지)
   r.plan.clear();
   r.via = "";
   r.avoid.clear();
@@ -214,10 +215,8 @@ void TrafficManager::resend(const std::string& id) {
     if (!r.goal.empty()) tryExtend(r);
     return;
   }
-  const MapNode* here = map_.node(r.at);
-  bool reverse = here->pocket && contains(here->next, r.committed.front());
   r.cmd_active = false;
-  publish(r, r.committed, false, reverse);
+  publish(r, r.committed, false);
 }
 
 // ---------------------------------------------------------------- 경로 늘리기
@@ -456,51 +455,49 @@ bool TrafficManager::tryExtend(Robot& r) {
   // 규칙 5, 6
   bool leaving_pocket = was_empty && map_.node(r.at)->pocket;
   bool append = r.cmd_active && !leaving_pocket;
-  publish(r, batch, append, leaving_pocket);
+  publish(r, batch, append);
   return true;
 }
 
-// a -> b 로 갈 때 로봇 앞이 보는 방향. 후진 구간이면 진행 방향의 반대
-double TrafficManager::faceYaw(const std::string& a, const std::string& b) const {
-  double h = map_.heading(a, b);
-  if (map_.isReverseEdge(a, b)) h += (h > 0.0) ? -M_PI : M_PI;
-  return h;
-}
-
-// 노드에서 바라볼 방향: yaw가 정해진 정차점(도킹 · 픽업)은 yaml 값, 나머지는 다음 노드 쪽
-double TrafficManager::yawFor(const std::vector<std::string>& seq, size_t i, const std::string& before) const {
-  const MapNode* n = map_.node(seq[i]);
-  // 테이블 · 대기 정차점은 양방향 길 위에 있으니 들어온 방향 그대로
-  if (n->has_yaw) return n->yaw;
-  if (i + 1 < seq.size()) return faceYaw(seq[i], seq[i + 1]);
-  std::string prev = (i > 0) ? seq[i - 1] : before;
-  if (!prev.empty() && prev != seq[i]) return faceYaw(prev, seq[i]);
-  return 0.0;
-}
-
-// 규칙 5: Move 하나에는 방향 하나 (fleet_msgs v5 Move.drive)
-//   노드마다 "그 노드로 가는 길"이 후진인지 보고, 방향이 바뀌는 곳에서 Move를 나눠 보낸다
+// 규칙 5: Move 하나에는 방향 하나 (fleet_msgs Move.drive, README 4.5 · 4.9)
+//   길마다 후진인지 보고(MapManager::driveReverse), 방향이 바뀌는 곳과 포켓에 드나드는 곳에서 Move를 나눈다
 //   나뉜 뒤쪽 Move는 같은 cmd_id로 APPEND. 로봇은 방향이 바뀌는 노드에서 멈추고 돌아서 이어 간다
-void TrafficManager::publish(Robot& r, const std::vector<std::string>& nodes, bool append, bool reverse_first) {
+//   yaw = 로봇 앞이 보는 방향: 다음 길 쪽 (후진이면 +180도). 목적지가 yaw 정해진 정차점이면 그 값
+void TrafficManager::publish(Robot& r, const std::vector<std::string>& nodes, bool append) {
   if (nodes.empty()) return;
 
   // nodes는 항상 committed의 뒤쪽이다. 첫 노드 바로 앞 = 앞서 보낸 마지막 노드 (없으면 지금 노드)
   std::string before = r.at;
   if (r.committed.size() > nodes.size()) before = r.committed[r.committed.size() - nodes.size() - 1];
 
-  std::vector<bool> rev(nodes.size(), false);
-  for (size_t i = 0; i < nodes.size(); ++i) {
-    const std::string& prev = (i == 0) ? before : nodes[i - 1];
-    rev[i] = map_.isReverseEdge(prev, nodes[i]) || (reverse_first && i == 0);
-  }
-
-  std::vector<std::string> seq = nodes;           // yaw 계산용: 보낼 노드 + 그 다음 계획 노드
+  std::vector<std::string> seq = nodes;  // 보낼 노드 + 그 다음 계획 노드 (yaw 계산용)
   if (!r.plan.empty()) seq.push_back(r.plan.front());
+  auto from = [&](size_t k) { return (k == 0) ? before : seq[k - 1]; };  // k번째 길 = from(k) -> seq[k]
+  std::vector<bool> rev(seq.size(), false);
+  for (size_t k = 0; k < seq.size(); ++k) rev[k] = map_.driveReverse(from(k), seq[k], r.route_start, r.goal);
+
+  auto yawAt = [&](size_t i) {
+    const MapNode* n = map_.node(seq[i]);
+    if (n->has_yaw && i + 1 >= seq.size() && seq[i] == r.goal) return n->yaw;
+    double h = 0.0;
+    bool back = false;
+    if (i + 1 < seq.size()) {
+      h = map_.heading(seq[i], seq[i + 1]);
+      back = rev[i + 1];
+    } else if (from(i) != seq[i]) {
+      h = map_.heading(from(i), seq[i]);
+      back = rev[i];
+    }
+    if (back) h += (h > 0.0) ? -M_PI : M_PI;
+    return h;
+  };
 
   size_t start = 0;
   while (start < nodes.size()) {
     size_t end = start;
-    while (end + 1 < nodes.size() && rev[end + 1] == rev[start]) end++;
+    while (end + 1 < nodes.size() && rev[end + 1] == rev[start] &&
+           !map_.isPocketEdge(from(end + 1), seq[end + 1], r.route_start, r.goal))
+      end++;
 
     bool app = (start == 0) ? append : true;
     if (!app) r.cmd_id = next_cmd_id_++;
@@ -517,7 +514,7 @@ void TrafficManager::publish(Robot& r, const std::vector<std::string>& nodes, bo
       w.node_id = n->id;
       w.x = n->x;
       w.y = n->y;
-      w.yaw = yawFor(seq, i, (i == 0) ? before : nodes[i - 1]);
+      w.yaw = yawAt(i);
       cmd.waypoints.push_back(w);
       if (i > start) text += ", ";
       text += n->id;

@@ -26,7 +26,7 @@ enum class Confirm { NONE, LOADED, RECEIVED, SEATED };
 // 테이블 상태: 빈자리 / 안내 중(예약) / 사용 중
 enum class TableState { FREE, RESERVED, OCCUPIED };
 
-// ---------------------------------------------------------------- 로봇 (fleet_msgs v5 숫자값 그대로)
+// ---------------------------------------------------------------- 로봇 (fleet_msgs v7 숫자값 그대로. 메시지는 v5부터 같음)
 
 enum class RobotRunState : uint8_t { IDLE = 0, MOVING = 1, PAUSED = 2, BLOCKED = 3, ERROR = 4 };
 enum class ControlCmd : uint8_t { PAUSE = 0, RESUME = 1, CANCEL = 2 };
@@ -46,7 +46,7 @@ struct WaypointCmd {
   double yaw = 0.0;  // 로봇 앞이 보는 방향 (후진 중이면 진행 방향 + 180도)
 };
 
-// Move.drive (fleet_msgs v5): Move 하나에 담긴 waypoints 전체의 주행 방향
+// Move.drive (fleet_msgs v5~): Move 하나에 담긴 waypoints 전체의 주행 방향
 enum class Drive : uint8_t { FORWARD = 0, REVERSE = 1 };
 
 struct MoveCmd {

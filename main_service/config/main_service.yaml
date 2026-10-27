@@ -2,12 +2,15 @@
 # 상대 경로는 이 파일이 있는 폴더 기준
 
 http_port: 8080
-web_root: ../../web             # pinkytorang/web (고객 · 매장 · 입구 키오스크 UI)
+web_root: ../../web             # pinkytorang/web (고객 · 매장 · 입구 키오스크 UI). ros-repo-2에 올리면 ../../../web
 db_path: ../pinkytorang.db      # 없으면 새로 만든다
-node_graph: node_graph.yaml     # 노드 그래프 v11 최종맵 (그림: node_map_v11.png)
+node_graph: node_graph.yaml     # fleet_msgs v7.1 docs/node_graph.yaml 복사본 (그림 node_map_v7.png). ros-repo-2에 올리면 ../../fleet_msgs/docs/node_graph.yaml 로 바꾸고 복사본은 지움
 
-board_w: 2.28                   # 맵 크기 (m), UI 그림용
-board_h: 1.82
+# 키오스크 배치도에 그릴 범위 (map 좌표, m) = SLAM 맵 fleet_msgs/docs/maps/project_map_v2 (49 x 42칸, 5 cm, origin [1.323, 0.875])
+board_x: 1.323
+board_y: 0.875
+board_w: 2.45
+board_h: 2.10
 
 # 서버 쪽 토픽 앞에 붙는 로봇 ID (/pinky1/fleet/...)
 robots: [pinky1, pinky2, pinky3]
@@ -22,24 +25,24 @@ serve_batch_max: 3              # 같은 테이블 주문을 한 번에 싣는 �
 reassign_after_sec: 10          # 적재 전 로봇이 이만큼 고장 · 통신 끊김이면 다른 로봇에 다시 배정
 
 # ---- 도킹 구역 · 대기 배치
-entrance_docks: [D2, D1]        # 입구 쪽 (앞칸부터). 안내는 여기 서 있는 로봇이 한다 (앞칸 로봇부터)
+entrance_docks: [D1, D2]        # 입구 쪽 (앞칸부터). 안내는 여기 서 있는 로봇이 한다 (앞칸 로봇부터)
 pickup_docks: [D3, D4]          # 픽업 쪽
-dock_via: {D1: D2}              # 뒤칸: 앞칸. D1은 D2가 비어 있어야 드나든다
+dock_via: {D2: D1}              # 뒤칸: 앞칸. D2(안쪽)는 D1이 비어 있어야 드나든다. 둘 다 비면 D2부터 채운다
 busy_tables: 4                  # 찬 테이블(사용 중 + 안내 중)이 이 수 이상이면 바쁨
 entrance_standby_quiet: 2       # 한가할 때 입구에 세워 둘 로봇 수
 entrance_standby_busy: 1        # 바쁠 때 입구에 세워 둘 로봇 수 (만석이면 0 = 전부 픽업 쪽)
 entrance_keep_penalty_m: 1.5    # 서빙 배정 때 입구 로봇에 더하는 비용 (만석이 아니면, 다른 로봇이 비슷한 거리면 그쪽에 서빙)
 
 # ---- 테이블 (id = node_graph의 table 값). 손님이 입구 키오스크 배치도에서 빈 테이블을 직접 고른다
-#      x, y = 배치도에 그릴 테이블 중심 (m, 맵 좌표 · 원점 왼쪽 아래), w, h = 크기 (m, 안 쓰면 0.165 × 0.110)
-#      v11: 테이블 세로 배치 110 × 165 mm
+#      x, y = 배치도에 그릴 테이블 중심 (map 좌표, m), w, h = 크기 (m)
+#      SLAM 맵(project_map_v2)의 테이블 칸에서 읽은 값. 테이블은 정차점 위쪽 (로봇 바구니가 위를 봄)
 tables:
-  - {id: T1, x: 0.870, y: 1.737, w: 0.110, h: 0.165}   # 위쪽 벽 쪽 왼쪽
-  - {id: T2, x: 1.280, y: 1.737, w: 0.110, h: 0.165}   # 위쪽 벽 쪽 오른쪽
-  - {id: T3, x: 0.870, y: 1.312, w: 0.110, h: 0.165}   # 가운데 줄 왼쪽
-  - {id: T4, x: 1.280, y: 1.312, w: 0.110, h: 0.165}   # 가운데 줄 오른쪽
-  - {id: T5, x: 0.870, y: 0.847, w: 0.110, h: 0.165}   # 아래 줄 왼쪽
-  - {id: T6, x: 1.280, y: 0.847, w: 0.110, h: 0.165}   # 아래 줄 오른쪽
+  - {id: T1, x: 2.348, y: 2.750, w: 0.150, h: 0.150}   # 위쪽 벽 테이블 왼쪽 (정차 T1 = 2.348, 2.600)
+  - {id: T2, x: 2.798, y: 2.750, w: 0.150, h: 0.150}   # 위쪽 벽 테이블 오른쪽
+  - {id: T3, x: 2.348, y: 2.325, w: 0.150, h: 0.200}   # 가운데 줄 왼쪽
+  - {id: T4, x: 2.798, y: 2.325, w: 0.150, h: 0.200}   # 가운데 줄 오른쪽
+  - {id: T5, x: 2.348, y: 1.875, w: 0.150, h: 0.200}   # 아래 줄 왼쪽
+  - {id: T6, x: 2.798, y: 1.875, w: 0.150, h: 0.200}   # 아래 줄 오른쪽
 
 # ---- 배터리 (%) : 로봇 fleet/state 의 battery 값. 0 으로 두면 검사 안 함
 min_battery_pct: 30             # 작업이 끝날 때마다 확인: 이보다 낮으면 새 작업 · 이어받기 안 하고 도킹에서 충전 (도킹에서 충전된다고 가정)

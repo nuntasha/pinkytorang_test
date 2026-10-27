@@ -1,5 +1,8 @@
 // Map Manager: node_graph.yaml 읽기 · 검사 · 길 찾기
-// 파일은 nodes(점) + edges(양방향 길) + oneway(일방통행 길) + reverse(후진 구간)로 나뉜다 (자세한 형식은 map_manager.cpp load 위)
+// 두 형식을 읽는다 (자세한 형식은 map_manager.cpp load 위)
+//   fleet_msgs 형식: nodes에 type · stop_kind · next · pocket · entry (fleet_msgs/docs/node_graph.yaml)
+//   짧은 형식    : nodes(점) + edges(양방향 길) + oneway(일방통행 길)
+//   둘 다 reverse(후진 구간) · two_way_zones 사용 가능
 // 노드 성격은 ID 글자가 아니라 필드(kind, lock, no_wait, pocket)로만 판단한다
 #pragma once
 
@@ -19,6 +22,7 @@ struct MapNode {
   std::string stop_kind;  // "" / QUEUE / PICKUP / SERVE / DOCK
   std::string table;      // SERVE만
   bool pocket = false;
+  bool entry_reverse = false;  // pocket 진입 방향: false = 전진 진입 · 후진 출차, true = 후진 진입 · 전진 출차
   bool no_wait = false;
   bool lock = true;
   double x = 0.0;
@@ -46,6 +50,10 @@ class MapManager {
 
   // 후진 구간 (yaml reverse): a -> b 길을 후진으로 가는지
   bool isReverseEdge(const std::string& a, const std::string& b) const;
+  // 경로(start -> goal) 위 a -> b를 후진으로 가는지: reverse 구간 + 포켓 드나듦 (fleet_msgs README 4.5)
+  bool driveReverse(const std::string& a, const std::string& b, const std::string& start, const std::string& goal) const;
+  // 포켓에 드나드는 길 (출발 pocket에서 나옴 / 목적지 pocket으로 들어감) = Move를 따로 끊는 곳
+  bool isPocketEdge(const std::string& a, const std::string& b, const std::string& start, const std::string& goal) const;
 
   // 양방향 구간
   bool inZone(const std::string& id) const;

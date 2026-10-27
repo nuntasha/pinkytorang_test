@@ -240,6 +240,8 @@ void ClientLinkManager::setupRoutes() {
     wvalue::list arr;
     for (const TableView& t : tasks_.tables()) arr.push_back(tableJson(t));
     j["tables"] = std::move(arr);
+    j["board"]["x"] = cfg_.board_x;
+    j["board"]["y"] = cfg_.board_y;
     j["board"]["w"] = cfg_.board_w;
     j["board"]["h"] = cfg_.board_h;
     for (const MapNodeView& n : tasks_.mapView().nodes) {
@@ -296,6 +298,8 @@ void ClientLinkManager::setupRoutes() {
   CROW_ROUTE(app_, "/api/map")([this]() {
     MapView m = tasks_.mapView();
     wvalue j;
+    j["board"]["x"] = cfg_.board_x;
+    j["board"]["y"] = cfg_.board_y;
     j["board"]["w"] = m.board_w;
     j["board"]["h"] = m.board_h;
     wvalue::list nodes;

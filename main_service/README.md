@@ -43,7 +43,7 @@ C++17 · ROS 2 Jazzy. 로봇 3대가 **서빙**(주방 → 테이블)과 **안�
   - 다음 칸(노드)을 잡을 때 그 칸으로 가는 **길(엣지)도 같이** 잡는다 → 마주 오는 로봇이 같은 길에 못 들어옴
   - 앞이 막히면: 앞 로봇이 서 있으면(일하는 중 · 멈춤) 길이 상관없이 우회, 움직이는 중이면 우회가 `detour_max_m`(1 m) 이하로 길어질 때만 우회하고 아니면 기다림. `detour_wait_sec`(8초) 넘게 기다리면 길이 상관없이 우회
   - 서로 기다리는 교착이면 바로 우회, 우회 길도 없으면 한 대가 옆 칸으로 비켜 줌
-- **후진 (fleet_msgs v5 `Move.drive`)**: Move 하나에는 방향 하나. 노드 그래프 `reverse` 구간 · 포켓에서 나오는 첫 칸은 `REVERSE`, 방향이 바뀌는 노드에서 Move를 나눠 보낸다 (뒤쪽은 같은 cmd_id로 APPEND)
+- **후진 (fleet_msgs `Move.drive`)**: Move 하나에는 방향 하나. 규칙은 아래 맵 설명 참고. 나뉜 뒤쪽 Move는 같은 cmd_id로 APPEND
   - 예: `Move(REPLACE, FORWARD, [N16, N12])` + `Move(APPEND, REVERSE, [N13])` → 로봇은 N12에서 멈추고 돌아서 후진
   - 픽업 쪽 도킹 D3 · D4는 후진으로 들어가고 전진으로 나온다
   - 후진 중 PASS 노드의 yaw는 진행 방향 + 180°
@@ -78,30 +78,33 @@ WebSocket: `/ws/store` (snapshot에 `tables`, 로봇 `charging` 포함), `/ws/cu
 
 새로 생긴 항목: `tables`(id · 배치도 좌표 x, y · 크기 w, h), `entrance_docks` · `pickup_docks` · `dock_via`, `busy_tables` · `entrance_standby_quiet` · `entrance_standby_busy`, `max_active_guide`, `serve_batch_max`, `reassign_after_sec`, `entrance_keep_penalty_m`, `guide_timeout_sec`, `max_active_serve`, `min_battery_pct`, `ready_battery_pct`, `require_dock_start`, `display.to_table_guide / at_table_guide`
 
-맵은 **v11 최종맵** (`config/node_graph.yaml`, 그림 `config/node_map_v11.png`)
-- 테이블 6 세로 배치: T1 · T2는 위쪽 벽에 붙음(윗길에서 서빙), T3 · T4 가운데 줄, T5 · T6 아래 줄 (각 테이블 아래 길에서 서빙)
-- 입구 통로: N1 → D2(앞칸) → D1(뒤칸) 한 줄. 마커는 왼쪽 바깥 벽
-- 주방 통로: 아래 → 위 일방통행 N12 → N13 → N17 → P2(픽업 대기) → P1(픽업) → N4, **N12에서 돌아서 후진**(바구니 앞장)
-  - N12: 오른쪽 벽 마커로 멈춤 위치, 아래 벽 마커로 축 고정 후 후진
-  - P1: 통로 위 모서리. 왼쪽을 보게 돌고(yaw 180°) 라인트레이싱으로 바구니를 주방에 꽂은 뒤 `CMD_DONE`, 적재 후 전진으로 N4
-  - D4(N13 옆) · D3(N17 옆): 칸막이 위 구역, 후진으로 들어감, 마커는 통로 건너 칸막이
-- 좌표는 그림 비율로 잰 값. SLAM 맵이 나오면 실측 좌표로 바꾼다 (키오스크 배치도 `tables` x, y도 같이)
+맵은 **fleet_msgs v7.1** (`config/node_graph.yaml` = fleet_msgs `docs/node_graph.yaml` 복사본, 그림 `config/node_map_v7.png`)
+- ros-repo-2에 올릴 때는 설정의 `node_graph`를 `../../fleet_msgs/docs/node_graph.yaml`로 바꿔 복사 없이 읽고, `web_root`는 `../../../web`
+- 좌표는 SLAM 맵 `fleet_msgs/docs/maps/project_map_v2` 기준 map 프레임. 맵이 바뀌면 fleet_msgs 쪽만 고치면 된다
+- 홀 격자 N1~N13 (위 → 아래 줄, 왼 → 오), 테이블 T1~T6, 전부 양방향 1차선
+- 입구 통로: N1 → D1(앞칸) → D2(안쪽) 한 줄. 둘 다 비면 D2부터 채우고, D2 로봇은 D1이 비어야 나온다 (`dock_via: {D2: D1}`)
+- 주방 통로: N13 → N14 → N15 → N16 → P2(대기) → P1(픽업) → N4 일방통행, **N14부터 P1까지 후진**(`reverse`)
+- 전진 / 후진 · Move 나누기 (`MapManager::driveReverse`, fleet_msgs README 4.5 · 4.9). **노드 그래프를 읽고 Move로 바꾸는 기준 구현은 main_service 하나**
+  - `reverse` 구간: 후진 / 목적지 pocket으로 들어가는 길: entry 방향 / 출발 pocket에서 나오는 길: entry 반대 / 나머지(지나가는 pocket 포함): 전진
+  - 방향이 바뀌는 곳, 목적지 pocket으로 들어가는 길에서 Move를 끊는다
+  - 예: D2로 `FORWARD [.., N1, D1]` → `REVERSE [D2]`, D2에서 `FORWARD [D1, N1, ..]` / D3에서 `FORWARD [N16]` → `REVERSE [P2]` → `[P1]`
+- 정차 방향(`yaw`)은 **그 노드가 목적지일 때만** 맞춘다 (가는 길에 지나가는 테이블 · D1은 진행 방향)
+- 정밀 정차(dock / align / tape)는 로봇 쪽 `fleet_msgs/docs/precision_stops.yaml`. 서버는 모른다
+- 키오스크 배치도는 `board_x · board_y · board_w · board_h`(map 좌표)와 `tables`(map 좌표)로 그린다
 
-노드 그래프 형식 (`MapManager::load`)
-- `nodes`: `{id, x, y}` + 정차점이면 `kind`(QUEUE / PICKUP / SERVE / DOCK), 방향이 정해진 정차점만 `yaw` (도킹 필수, 픽업 P1). `lock`은 기본 true라 코너에만 `lock: false`. 테이블 정차점은 id가 테이블 이름
-- `edges`: 양방향 길을 사슬로 (`[A, B, C]` = A-B, B-C 양쪽)
-- `oneway`: 일방통행 길 (`[A, B, C]` = A→B→C)
-- `reverse`(선택): 후진 구간 (`[A, B, C]` = A→B, B→C를 후진). 길은 edges / oneway에 있어야 하고, 첫 · 끝 노드는 lock 노드
-- `two_way_zones`(선택): 들어갈 때 한 번에 잡는 1차선 구간
+노드 그래프 형식 (`MapManager::load`, 두 형식 다 읽음)
+- **fleet_msgs 형식** (팀 기준): 노드마다 `type`(PASS / STOP), `stop_kind`, `table`, `lock`, `pocket`, `entry`(FORWARD / REVERSE), `x`, `y`, `yaw`, `next`(갈 수 있는 다음 노드)
+- **짧은 형식**: `nodes`(`{id, x, y}` + `kind`), `edges`(양방향 사슬), `oneway`(일방 사슬)
+- 공통: `reverse`(후진 구간, 첫 · 끝 노드는 lock 노드), `two_way_zones`(선택)
 
 ## 빌드 · 실행
 
 ```bash
 sudo apt install -y libasio-dev libyaml-cpp-dev libsqlite3-dev
 
-# 워크스페이스: ~/projects/Pinkytorang/{src/fleet_msgs, src/main_service, web}
-cd ~/projects/Pinkytorang
-colcon build --packages-select fleet_msgs pinkytorang_main   # fleet_msgs는 v5 (0.5.0)
+# 워크스페이스: {src/fleet_msgs, src/main_service, web} (ros-repo-2 구조)
+cd ~/ros-repo-2
+colcon build --packages-select fleet_msgs pinkytorang_main   # fleet_msgs 0.7.1 (메시지는 v5부터 같음)
 source install/setup.bash
 
 # 가상 로봇 (ROS 없이 관제 · UI 확인, 2배속)
@@ -116,7 +119,7 @@ ros2 run pinkytorang_main main_service src/main_service/config/main_service.yaml
 
 - `fleet/state`의 `battery`를 **% (0~100)** 로 보낸다. 값이 없으면 `min_battery_pct: 0`으로 꺼 둔다.
 - 안내 중에는 손님이 따라오므로 로봇 쪽(fleet_agent / Nav2)에서 속도를 낮춘다. 서버는 Display 문구로만 알린다.
-- **fleet_msgs v5**: `Move.drive`가 REVERSE면 waypoints 전체를 후진. 앞 Move와 drive가 다른 APPEND는 앞 Move 끝 노드에서 멈추고 돌아서 출발.
+- **fleet_msgs**: `Move.drive`가 REVERSE면 waypoints 전체를 후진. 앞 Move와 drive가 다른 APPEND는 앞 Move 끝 노드에서 멈추고 돌아서 출발.
 - P1(픽업)은 도킹처럼 정밀 정차: 도착 → yaw로 회전 → 테이프로 뒤를 맞춰 넣음 → `CMD_DONE`. 가상 로봇은 도킹 · 픽업에서 1초 쉬고 `CMD_DONE`.
 
 ## 교착 주의 (자물쇠 순서)

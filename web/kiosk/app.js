@@ -5,7 +5,7 @@
 // - 판단하지 않는다. 빈자리인지는 서버가 최종 확인한다 (이미 찼으면 409)
 
 const $ = (id) => document.getElementById(id);
-const state = { board: { w: 2.28, h: 1.82 }, entrance: null, tables: [], selected: null, taskId: null, poll: null, resetTimer: null };
+const state = { board: { x: 0, y: 0, w: 2.28, h: 1.82 }, entrance: null, tables: [], selected: null, taskId: null, poll: null, resetTimer: null };
 const ENDED = ['DONE', 'FAILED', 'CANCELED'];
 const MIN_W = 104, MIN_H = 72;   // 손가락으로 누를 수 있는 최소 크기 (px)
 
@@ -29,7 +29,7 @@ loadLayout();
 async function loadLayout() {
   const r = await api('GET', '/api/tables');
   if (!r.ok) return;
-  if (r.data.board) state.board = r.data.board;
+  if (r.data.board) state.board = Object.assign({ x: 0, y: 0 }, r.data.board);
   state.entrance = r.data.entrance || null;
   state.tables = r.data.tables || [];
   renderFloor();
@@ -61,7 +61,7 @@ function renderFloor() {
   const floor = $('floor');
   floor.style.width = W + 'px';
   floor.style.height = H + 'px';
-  const px = (x) => x * scale, py = (y) => H - y * scale;
+  const px = (x) => (x - state.board.x) * scale, py = (y) => H - (y - state.board.y) * scale;  // map 좌표 -> 화면
 
   let html = state.tables.map((t) => {
     const w = Math.max(MIN_W, (t.w || 0.165) * scale), h = Math.max(MIN_H, (t.h || 0.11) * scale);

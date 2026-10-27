@@ -12,22 +12,28 @@ static bool contains(const std::vector<std::string>& v, const std::string& s) {
   return std::find(v.begin(), v.end(), s) != v.end();
 }
 
-// node_graph.yaml 형식 (v7)
-//   nodes : {id, x, y}  + 정차점이면 kind(QUEUE/PICKUP/SERVE/DOCK)
-//           yaw는 방향이 정해진 정차점만 (도킹 필수, 픽업처럼 돌아서 대는 곳도 적음)
-//           lock은 기본 true (코너만 lock: false), pocket · no_wait는 필요할 때만
-//           SERVE 노드의 테이블 이름은 id와 같다 (다르면 table: 로 따로 적음)
-//   edges : 양방향 길. [A, B, C] = A-B, B-C 를 양쪽으로
-//   oneway: 일방통행 길. [A, B, C] = A->B->C
-//   reverse (선택): 후진 구간. [A, B, C] = A->B, B->C 를 후진으로 (길은 edges / oneway에 있어야 함)
-//                   첫 노드 · 끝 노드는 lock 노드 (방향을 바꾸며 회전하는 곳)
-//   two_way_zones (선택): 들어갈 때 한 번에 잡는 1차선 구간
+// node_graph.yaml 형식 (두 가지 모두 읽음, 섞어 써도 됨)
+//   fleet_msgs 형식 (fleet_msgs/docs/node_graph.yaml, 팀 기준 문서)
+//     nodes: {id, type: PASS/STOP, stop_kind, table, lock, pocket, entry: FORWARD/REVERSE, x, y, yaw, next: [..]}
+//       next = 갈 수 있는 다음 노드 (양방향은 양쪽에, 일방통행은 한쪽에만)
+//       pocket + entry: 포켓 진입 방향. FORWARD(기본) = 전진 진입 · 후진 출차, REVERSE = 후진 진입 · 전진 출차
+//       (드나드는 길의 방향은 경로의 출발 · 목적지로 정한다: driveReverse)
+//   짧은 형식
+//     nodes : {id, x, y}  + 정차점이면 kind(QUEUE/PICKUP/SERVE/DOCK), lock 기본 true
+//     edges : 양방향 길. [A, B, C] = A-B, B-C 를 양쪽으로
+//     oneway: 일방통행 길. [A, B, C] = A->B->C
+//   공통
+//     yaw: 방향이 정해진 정차점 (도킹 필수). 그 노드가 목적지일 때만 맞춘다
+//     SERVE 노드의 테이블 이름은 table (없으면 id)
+//     reverse (선택): 후진 구간. [A, B, C] = A->B, B->C 를 후진으로. 첫 노드 · 끝 노드는 lock 노드
+//     two_way_zones (선택): 들어갈 때 한 번에 잡는 1차선 구간
 bool MapManager::load(const std::string& path, std::string& error) {
   nodes_.clear();
   index_.clear();
   zones_.clear();
   reverse_edges_.clear();
   std::vector<std::vector<std::string>> reverse_chains;
+  std::vector<std::pair<std::string, std::vector<std::string>>> next_lists;  // fleet_msgs 형식의 next
   std::vector<std::string> problems;
 
   // a -> b 길 추가 (같은 길 두 번은 무시)
@@ -46,7 +52,16 @@ bool MapManager::load(const std::string& path, std::string& error) {
       MapNode m;
       m.id = n["id"].as<std::string>();
       if (n["kind"]) m.stop_kind = n["kind"].as<std::string>();
+      else if (n["stop_kind"]) m.stop_kind = n["stop_kind"].as<std::string>();  // fleet_msgs 형식
       m.type = m.stop_kind.empty() ? "PASS" : "STOP";  // 정차 종류가 있으면 STOP
+      if (n["type"] && n["type"].as<std::string>() == "STOP" && m.stop_kind.empty())
+        problems.push_back(m.id + ": type STOP인데 stop_kind 없음");
+      if (n["entry"]) {
+        std::string entry = n["entry"].as<std::string>();
+        if (entry == "REVERSE") m.entry_reverse = true;
+        else if (entry != "FORWARD") problems.push_back(m.id + ": 모르는 entry " + entry);
+      }
+      if (n["next"]) next_lists.push_back({m.id, n["next"].as<std::vector<std::string>>()});
       if (n["table"]) m.table = n["table"].as<std::string>();
       else if (m.stop_kind == "SERVE") m.table = m.id;   // 테이블 정차점 id = 테이블 이름
       if (n["pocket"]) m.pocket = n["pocket"].as<bool>();
@@ -65,6 +80,9 @@ bool MapManager::load(const std::string& path, std::string& error) {
       }
       index_[m.id] = static_cast<int>(nodes_.size());
       nodes_.push_back(m);
+    }
+    for (const auto& nl : next_lists) {
+      for (const std::string& b : nl.second) addNext(nl.first, b);
     }
     if (root["edges"]) {
       for (const YAML::Node& e : root["edges"]) {
@@ -159,6 +177,29 @@ std::vector<std::string> MapManager::nodesOfKind(const std::string& kind) const 
     if (m.stop_kind == kind) out.push_back(m.id);
   }
   return out;
+}
+
+// 경로 위 a -> b를 후진으로 가는지 (fleet_msgs README 4.5 · 4.9)
+//   1. reverse 구간에 적힌 길: 후진
+//   2. 경로의 목적지(goal)가 pocket이면 마지막 길은 그 pocket의 entry 방향 (D1~D4 = REVERSE, 바구니부터)
+//   3. 경로의 출발지(start)가 pocket이면 첫 길은 entry의 반대 (REVERSE로 들어간 도킹은 전진으로 나옴)
+//   4. 나머지 (지나가기만 하는 pocket 포함, 예: D2로 가며 지나는 D1): 전진
+bool MapManager::driveReverse(const std::string& a, const std::string& b, const std::string& start,
+                              const std::string& goal) const {
+  if (isReverseEdge(a, b)) return true;
+  const MapNode* nb = node(b);
+  if (nb && b == goal && nb->pocket) return nb->entry_reverse;
+  const MapNode* na = node(a);
+  if (na && a == start && na->pocket) return !na->entry_reverse;
+  return false;
+}
+
+// 포켓에 드나드는 길이면 Move를 따로 끊는다 (로봇이 정밀 도킹 / 출차를 따로 하게)
+bool MapManager::isPocketEdge(const std::string& a, const std::string& b, const std::string& start,
+                              const std::string& goal) const {
+  const MapNode* na = node(a);
+  const MapNode* nb = node(b);
+  return (na && a == start && na->pocket) || (nb && b == goal && nb->pocket);
 }
 
 bool MapManager::isReverseEdge(const std::string& a, const std::string& b) const {

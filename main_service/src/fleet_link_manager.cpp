@@ -7,7 +7,7 @@
 namespace pinky {
 
 FleetLinkManager::FleetLinkManager(rclcpp::Node::SharedPtr node, const Config& cfg) : node_(node), cfg_(cfg) {
-  // QoS: fleet_msgs v5 README 2.3
+  // QoS: fleet_msgs v7 README 2.3
   rclcpp::QoS reliable = rclcpp::QoS(10).reliable();
   rclcpp::QoS display_qos = rclcpp::QoS(1).reliable().transient_local();  // 늦게 켜진 로봇도 마지막 화면을 받음
   rclcpp::QoS state_qos = rclcpp::QoS(1).best_effort();                  // 자주 오니 하나 빠져도 괜찮음

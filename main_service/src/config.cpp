@@ -22,6 +22,8 @@ bool loadConfig(const std::string& path, Config& cfg, std::string& error) {
     if (root["web_root"]) cfg.web_root = root["web_root"].as<std::string>();
     if (root["db_path"]) cfg.db_path = root["db_path"].as<std::string>();
     if (root["node_graph"]) cfg.node_graph = root["node_graph"].as<std::string>();
+    if (root["board_x"]) cfg.board_x = root["board_x"].as<double>();
+    if (root["board_y"]) cfg.board_y = root["board_y"].as<double>();
     if (root["board_w"]) cfg.board_w = root["board_w"].as<double>();
     if (root["board_h"]) cfg.board_h = root["board_h"].as<double>();
     if (root["robots"]) cfg.robots = root["robots"].as<std::vector<std::string>>();
