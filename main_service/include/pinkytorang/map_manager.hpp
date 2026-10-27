@@ -1,5 +1,6 @@
-// Map Manager: node_graph.yaml (fleet_msgs v4) 읽기 · 검사 · 길 찾기
-// 노드 성격은 ID 글자가 아니라 필드(type, stop_kind, lock, no_wait, pocket)로만 판단한다
+// Map Manager: node_graph.yaml 읽기 · 검사 · 길 찾기
+// 파일은 nodes(점) + edges(양방향 길) + oneway(일방통행 길)로 나뉜다 (자세한 형식은 map_manager.cpp load 위)
+// 노드 성격은 ID 글자가 아니라 필드(kind, lock, no_wait, pocket)로만 판단한다
 #pragma once
 
 #include <map>
@@ -13,7 +14,7 @@ namespace pinky {
 
 struct MapNode {
   std::string id;
-  std::string type;       // PASS / STOP
+  std::string type;       // PASS / STOP (kind가 있으면 STOP)
   std::string stop_kind;  // "" / QUEUE / PICKUP / SERVE / DOCK
   std::string table;      // SERVE만
   bool pocket = false;

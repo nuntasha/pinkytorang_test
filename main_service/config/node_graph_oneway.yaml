@@ -1,35 +1,54 @@
-# 노드 그래프 v7 (일방통행 + 입구 통로 구간 잠금). 테이블 6 (T1 T2 위쪽 벽 쪽)
+# 노드 그래프 v7 (일방통행 + 입구 통로 구간 잠금). 테이블 6 (T1 T2 위쪽 벽 쪽). 그림: node_map_v7_oneway.png
 # 좌표 = 2280 x 1820 mm 판 기준 설계값(m), 원점 = 보드 왼쪽 아래. SLAM 맵 완성 후 실측값으로 교체
-# ID 규칙: T 테이블 정차 / D 도킹 / P 픽업 줄 / N 길 위의 점
+#
+# nodes : {id, x, y} + 정차점이면 kind (QUEUE 대기 / PICKUP 픽업 / SERVE 테이블 / DOCK 도킹)
+#         도킹만 yaw(바라보는 방향, rad). 테이블 정차점 id = 테이블 이름. lock 기본 true, 코너만 lock: false
+# edges : 양방향 길 ([A, B, C] = A-B, B-C)   oneway: 일방통행 길 ([A, B, C] = A->B->C)
 
 nodes:
-  - {id: D1, type: STOP, stop_kind: DOCK, lock: true, x: 0.150, y: 0.700, yaw: 0.0, next: [N1]}   # 입구 도킹 (안내 로봇, 오른쪽 벽을 봄)
-  - {id: N1, type: PASS, lock: true, x: 0.150, y: 1.580, next: [N2, D1]}   # 입구 통로 위 끝
-  - {id: N5, type: PASS, lock: false, x: 1.995, y: 1.580, next: [N4]}   # 주방 통로 위 모서리
-  - {id: N4, type: PASS, lock: true, x: 1.695, y: 1.580, next: [T2]}   # 오른쪽 세로길 위 끝
-  - {id: N3, type: PASS, lock: true, x: 1.075, y: 1.580, next: [T1, N7]}   # 가운데 세로길 위 끝
-  - {id: N2, type: PASS, lock: true, x: 0.455, y: 1.580, next: [N6, N1]}   # 왼쪽 세로길 위 끝
-  - {id: T1, type: STOP, stop_kind: SERVE, table: T1, lock: true, x: 0.765, y: 1.580, yaw: 3.1416, next: [N2]}   # T1 (벽 쪽) 아래 정차
-  - {id: T2, type: STOP, stop_kind: SERVE, table: T2, lock: true, x: 1.385, y: 1.580, yaw: 3.1416, next: [N3]}   # T2 (벽 쪽) 아래 정차
-  - {id: N6, type: PASS, lock: true, x: 0.455, y: 1.150, next: [N9, T3]}   # 왼쪽 · 가운데 줄
-  - {id: T3, type: STOP, stop_kind: SERVE, table: T3, lock: true, x: 0.765, y: 1.150, yaw: 0.0, next: [N7]}   # T3 아래 정차
-  - {id: N7, type: PASS, lock: true, x: 1.075, y: 1.150, next: [N10, T4]}   # 가운데 · 가운데 줄
-  - {id: T4, type: STOP, stop_kind: SERVE, table: T4, lock: true, x: 1.385, y: 1.150, yaw: 0.0, next: [N8]}   # T4 아래 정차
-  - {id: N8, type: PASS, lock: true, x: 1.695, y: 1.150, next: [N4]}   # 오른쪽 · 가운데 줄
-  - {id: N9, type: PASS, lock: true, x: 0.455, y: 0.520, next: [N14, T5]}   # 왼쪽 · 아래 줄
-  - {id: T5, type: STOP, stop_kind: SERVE, table: T5, lock: true, x: 0.765, y: 0.520, yaw: 0.0, next: [N10]}   # T5 아래 정차
-  - {id: N10, type: PASS, lock: true, x: 1.075, y: 0.520, next: [N15, T6]}   # 가운데 · 아래 줄
-  - {id: T6, type: STOP, stop_kind: SERVE, table: T6, lock: true, x: 1.385, y: 0.520, yaw: 0.0, next: [N11]}   # T6 아래 정차
-  - {id: N11, type: PASS, lock: true, x: 1.695, y: 0.520, next: [N8]}   # 오른쪽 · 아래 줄
-  - {id: N14, type: PASS, lock: false, x: 0.455, y: 0.145, next: [N15]}   # 왼쪽 아래 모서리
-  - {id: N15, type: PASS, lock: true, x: 1.075, y: 0.145, next: [N16]}   # 가운데 세로길 아래 끝
-  - {id: N16, type: PASS, lock: true, x: 1.695, y: 0.145, next: [N11, N12]}   # 오른쪽 세로길 아래 끝
-  - {id: N12, type: PASS, lock: true, x: 1.995, y: 0.145, next: [N13, D2]}   # 주방 통로 아래 끝, D2 앞
-  - {id: N13, type: PASS, lock: true, x: 1.995, y: 0.502, next: [P2, D3]}   # D3 앞
-  - {id: P2, type: STOP, stop_kind: QUEUE, lock: true, x: 1.995, y: 1.000, yaw: 1.5708, next: [P1]}   # 픽업 대기
-  - {id: P1, type: STOP, stop_kind: PICKUP, lock: true, x: 1.995, y: 1.400, yaw: 1.5708, next: [N5]}   # 픽업 창구
-  - {id: D2, type: STOP, stop_kind: DOCK, lock: true, x: 2.210, y: 0.160, yaw: -1.5708, next: [N12]}   # 도킹 아래 칸 (바닥 벽을 봄)
-  - {id: D3, type: STOP, stop_kind: DOCK, lock: true, x: 2.210, y: 0.502, yaw: -1.5708, next: [N13]}   # 도킹 위 칸 (칸막이를 봄)
+  - {id: D1, kind: DOCK, x: 0.150, y: 0.700, yaw: 0.0}      # 입구 도킹 (안내 로봇, 오른쪽 벽을 봄)
+  - {id: N1, x: 0.150, y: 1.580}                            # 입구 통로 위 끝
+  - {id: N5, x: 1.995, y: 1.580, lock: false}               # 주방 통로 위 모서리
+  - {id: N4, x: 1.695, y: 1.580}                            # 오른쪽 세로길 위 끝
+  - {id: N3, x: 1.075, y: 1.580}                            # 가운데 세로길 위 끝
+  - {id: N2, x: 0.455, y: 1.580}                            # 왼쪽 세로길 위 끝
+  - {id: T1, kind: SERVE, x: 0.765, y: 1.580}               # T1 (벽 쪽) 아래 정차
+  - {id: T2, kind: SERVE, x: 1.385, y: 1.580}               # T2 (벽 쪽) 아래 정차
+  - {id: N6, x: 0.455, y: 1.150}                            # 왼쪽 · 가운데 줄
+  - {id: T3, kind: SERVE, x: 0.765, y: 1.150}               # T3 아래 정차
+  - {id: N7, x: 1.075, y: 1.150}                            # 가운데 · 가운데 줄
+  - {id: T4, kind: SERVE, x: 1.385, y: 1.150}               # T4 아래 정차
+  - {id: N8, x: 1.695, y: 1.150}                            # 오른쪽 · 가운데 줄
+  - {id: N9, x: 0.455, y: 0.520}                            # 왼쪽 · 아래 줄
+  - {id: T5, kind: SERVE, x: 0.765, y: 0.520}               # T5 아래 정차
+  - {id: N10, x: 1.075, y: 0.520}                           # 가운데 · 아래 줄
+  - {id: T6, kind: SERVE, x: 1.385, y: 0.520}               # T6 아래 정차
+  - {id: N11, x: 1.695, y: 0.520}                           # 오른쪽 · 아래 줄
+  - {id: N14, x: 0.455, y: 0.145, lock: false}              # 왼쪽 아래 모서리
+  - {id: N15, x: 1.075, y: 0.145}                           # 가운데 세로길 아래 끝
+  - {id: N16, x: 1.695, y: 0.145}                           # 오른쪽 세로길 아래 끝
+  - {id: N12, x: 1.995, y: 0.145}                           # 주방 통로 아래 끝, D2 앞
+  - {id: N13, x: 1.995, y: 0.502}                           # D3 앞
+  - {id: P2, kind: QUEUE, x: 1.995, y: 1.000}               # 픽업 대기
+  - {id: P1, kind: PICKUP, x: 1.995, y: 1.400}              # 픽업 창구
+  - {id: D2, kind: DOCK, x: 2.210, y: 0.160, yaw: -1.5708}  # 도킹 아래 칸 (바닥 벽을 봄)
+  - {id: D3, kind: DOCK, x: 2.210, y: 0.502, yaw: -1.5708}  # 도킹 위 칸 (칸막이를 봄)
+
+edges:
+  - [N2, N1]
+  - [N1, D1]
+  - [N12, D2]
+  - [N13, D3]
+
+oneway:
+  - [N12, N13, P2, P1, N5]
+  - [N5, N4, T2, N3, T1, N2]
+  - [N2, N6, N9, N14]
+  - [N3, N7, N10, N15]
+  - [N16, N11, N8, N4]
+  - [N6, T3, N7, T4, N8]
+  - [N9, T5, N10, T6, N11]
+  - [N14, N15, N16, N12]
 
 two_way_zones:
   - {id: Z1, nodes: [N2, N1, D1]}   # 입구 통로

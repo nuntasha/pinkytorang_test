@@ -12,20 +12,38 @@ static bool contains(const std::vector<std::string>& v, const std::string& s) {
   return std::find(v.begin(), v.end(), s) != v.end();
 }
 
+// node_graph.yaml 형식 (v7)
+//   nodes : {id, x, y}  + 정차점이면 kind(QUEUE/PICKUP/SERVE/DOCK), 도킹이면 yaw
+//           lock은 기본 true (코너만 lock: false), pocket · no_wait는 필요할 때만
+//           SERVE 노드의 테이블 이름은 id와 같다 (다르면 table: 로 따로 적음)
+//   edges : 양방향 길. [A, B, C] = A-B, B-C 를 양쪽으로
+//   oneway: 일방통행 길. [A, B, C] = A->B->C
+//   two_way_zones (선택): 들어갈 때 한 번에 잡는 1차선 구간
 bool MapManager::load(const std::string& path, std::string& error) {
   nodes_.clear();
   index_.clear();
   zones_.clear();
   std::vector<std::string> problems;
 
+  // a -> b 길 추가 (같은 길 두 번은 무시)
+  auto addNext = [&](const std::string& a, const std::string& b) {
+    if (!index_.count(a) || !index_.count(b)) {
+      problems.push_back("길에 없는 노드: " + a + " - " + b);
+      return;
+    }
+    std::vector<std::string>& next = nodes_[index_[a]].next;
+    if (std::find(next.begin(), next.end(), b) == next.end()) next.push_back(b);
+  };
+
   try {
     YAML::Node root = YAML::LoadFile(path);
     for (const YAML::Node& n : root["nodes"]) {
       MapNode m;
       m.id = n["id"].as<std::string>();
-      m.type = n["type"].as<std::string>();
-      if (n["stop_kind"]) m.stop_kind = n["stop_kind"].as<std::string>();
+      if (n["kind"]) m.stop_kind = n["kind"].as<std::string>();
+      m.type = m.stop_kind.empty() ? "PASS" : "STOP";  // 정차 종류가 있으면 STOP
       if (n["table"]) m.table = n["table"].as<std::string>();
+      else if (m.stop_kind == "SERVE") m.table = m.id;   // 테이블 정차점 id = 테이블 이름
       if (n["pocket"]) m.pocket = n["pocket"].as<bool>();
       if (n["no_wait"]) m.no_wait = n["no_wait"].as<bool>();
       if (n["lock"]) m.lock = n["lock"].as<bool>();
@@ -35,7 +53,6 @@ bool MapManager::load(const std::string& path, std::string& error) {
         m.yaw = n["yaw"].as<double>();
         m.has_yaw = true;
       }
-      if (n["next"]) m.next = n["next"].as<std::vector<std::string>>();
 
       if (index_.count(m.id)) {
         problems.push_back(m.id + ": ID 중복");
@@ -43,6 +60,21 @@ bool MapManager::load(const std::string& path, std::string& error) {
       }
       index_[m.id] = static_cast<int>(nodes_.size());
       nodes_.push_back(m);
+    }
+    if (root["edges"]) {
+      for (const YAML::Node& e : root["edges"]) {
+        std::vector<std::string> chain = e.as<std::vector<std::string>>();
+        for (size_t i = 1; i < chain.size(); ++i) {
+          addNext(chain[i - 1], chain[i]);
+          addNext(chain[i], chain[i - 1]);
+        }
+      }
+    }
+    if (root["oneway"]) {
+      for (const YAML::Node& e : root["oneway"]) {
+        std::vector<std::string> chain = e.as<std::vector<std::string>>();
+        for (size_t i = 1; i < chain.size(); ++i) addNext(chain[i - 1], chain[i]);
+      }
     }
     if (root["two_way_zones"]) {
       for (const YAML::Node& z : root["two_way_zones"]) {
@@ -59,12 +91,11 @@ bool MapManager::load(const std::string& path, std::string& error) {
 
   // ---- 검사
   for (const MapNode& m : nodes_) {
-    for (const std::string& nx : m.next) {
-      if (!index_.count(nx)) problems.push_back(m.id + ": next에 없는 노드 " + nx);
-    }
-    if (m.type == "STOP" && !m.has_yaw) problems.push_back(m.id + ": STOP인데 yaw 없음");
-    if (m.type == "STOP" && m.stop_kind.empty()) problems.push_back(m.id + ": STOP인데 stop_kind 없음");
-    if (m.stop_kind == "SERVE" && m.table.empty()) problems.push_back(m.id + ": SERVE인데 table 없음");
+    const std::string& k = m.stop_kind;
+    if (!k.empty() && k != "QUEUE" && k != "PICKUP" && k != "SERVE" && k != "DOCK")
+      problems.push_back(m.id + ": 모르는 kind " + k);
+    if (k == "DOCK" && !m.has_yaw) problems.push_back(m.id + ": 도킹인데 yaw 없음");
+    if (m.next.empty()) problems.push_back(m.id + ": 나가는 길이 없음");
   }
   for (const TwoWayZone& z : zones_) {
     for (const std::string& id : z.nodes) {

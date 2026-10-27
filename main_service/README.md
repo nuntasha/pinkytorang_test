@@ -74,6 +74,12 @@ WebSocket: `/ws/store` (snapshot에 `tables`, 로봇 `charging` 포함), `/ws/cu
 - 오른쪽 아래 도킹 칸 2개: D3 위 칸, D2 아래 칸 (각 칸 아래 벽을 봄)
 - 좌표는 2280 × 1820 mm 판 기준 설계값. SLAM 맵이 나오면 실측 좌표로 바꾼다 (키오스크 배치도 `tables` x, y도 같이)
 
+노드 그래프 형식 (`MapManager::load`)
+- `nodes`: `{id, x, y}` + 정차점이면 `kind`(QUEUE / PICKUP / SERVE / DOCK), 도킹만 `yaw`. `lock`은 기본 true라 코너에만 `lock: false`. 테이블 정차점은 id가 테이블 이름
+- `edges`: 양방향 길을 사슬로 (`[A, B, C]` = A-B, B-C 양쪽)
+- `oneway`: 일방통행 길 (`[A, B, C]` = A→B→C)
+- `two_way_zones`(선택): 들어갈 때 한 번에 잡는 1차선 구간
+
 ## 빌드 · 실행
 
 ```bash
