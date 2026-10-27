@@ -43,7 +43,10 @@ bool loadConfig(const std::string& path, Config& cfg, std::string& error) {
       for (const YAML::Node& it : root["tables"]) {
         TableConfig t;
         t.id = it["id"].as<std::string>();
-        if (it["seats"]) t.seats = it["seats"].as<int>();
+        if (it["x"]) t.x = it["x"].as<double>();
+        if (it["y"]) t.y = it["y"].as<double>();
+        if (it["w"]) t.w = it["w"].as<double>();
+        if (it["h"]) t.h = it["h"].as<double>();
         cfg.tables.push_back(t);
       }
     }
@@ -85,7 +88,7 @@ bool loadConfig(const std::string& path, Config& cfg, std::string& error) {
     return false;
   }
   if (cfg.tables.empty()) {
-    error = "tables 목록이 비어 있음 (테이블 id, seats)";
+    error = "tables 목록이 비어 있음 (테이블 id, x, y)";
     return false;
   }
   if (cfg.lock_lookahead < 1) cfg.lock_lookahead = 1;

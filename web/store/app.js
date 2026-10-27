@@ -115,7 +115,7 @@ function onMessage(msg) {
 function taskById(id) { return state.tasks.find((t) => t.task_id === id); }
 function itemsText(t) {
   if (!t) return '';
-  if (t.kind === 'GUIDE') return `${t.party}명`;
+  if (t.kind === 'GUIDE') return '';
   return t.items ? t.items.map((i) => `${i.name ?? i.menu_id} ${i.qty}`).join(', ') : '';
 }
 
@@ -178,7 +178,7 @@ function card(t) {
   const c = state.confirms[t.task_id];
   const guestWait = c && GUEST_CONFIRM[c.confirm];
   const bad = t.stage === 'FAILED' || t.stage === 'CANCELED';
-  const tableText = t.table || (t.kind === 'GUIDE' ? '자리 대기' : '');
+  const tableText = t.table || '';
   return `
     <div class="card">
       <div class="card-top">
@@ -202,11 +202,9 @@ function card(t) {
 
 // ---------- 테이블 ----------
 function renderTables() {
-  const waiting = state.tasks.filter((t) => t.kind === 'GUIDE' && t.stage === 'WAITING' && !t.table).length;
-  $('guideQueue').textContent = waiting ? `입장 대기 ${waiting}팀` : '';
   setHtml('tables', state.tables.map((tb) => `
     <div class="table-cell ${esc(tb.state)}">
-      <div class="table-top"><span class="table-name">${esc(tb.id)}</span><span class="table-seats num">${esc(tb.seats)}인</span></div>
+      <div class="table-top"><span class="table-name">${esc(tb.id)}</span></div>
       <div class="table-state">${TABLE_STATE[tb.state] || esc(tb.state)}</div>
       ${tb.state === 'OCCUPIED' ? `<button class="btn btn-dark" data-act="clear" data-table="${esc(tb.id)}">정리 완료</button>` : ''}
       ${tb.state === 'FREE' ? `<button class="btn btn-ghost" data-act="occupy" data-table="${esc(tb.id)}">착석 처리</button>` : ''}

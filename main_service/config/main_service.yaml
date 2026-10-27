@@ -4,7 +4,7 @@
 http_port: 8080
 web_root: ../../web             # pinkytorang/web (고객 · 매장 · 입구 키오스크 UI)
 db_path: ../pinkytorang.db      # 없으면 새로 만든다
-node_graph: node_graph.yaml     # 노드 그래프 v6 (그림: node_map_v6.png, 맵 바뀌면 이 파일 교체)
+node_graph: node_graph.yaml     # 노드 그래프 v6.2 (그림: node_map_v6.png, 맵 바뀌면 이 파일 교체)
 
 board_w: 2.28                   # 맵 크기 (m), UI 그림용
 board_h: 1.82
@@ -19,15 +19,16 @@ depart_grace_sec: 2             # 카운트다운 0 이후 실제 출발까지
 max_active_serve: 2             # 동시에 서빙하는 로봇 최대 수
 
 # ---- 안내
-entrance_dock: D1               # 손님을 맞는 입구 도킹 (왼쪽 입구 통로 아래). 안내는 여기 서 있는 로봇이 한다
+entrance_dock: D1               # 손님을 맞는 입구 도킹 (왼쪽 입구 통로, 입구 바로 위). 안내는 여기 서 있는 로봇이 한다
 entrance_keep_penalty_m: 1.5    # 서빙 배정 때 입구 로봇에 더하는 비용 (다른 로봇이 비슷한 거리면 그쪽에 서빙)
 
-# ---- 테이블 (id = node_graph의 table 값, seats = 좌석 수). 안내는 인원 이상인 빈 테이블 중 가장 작은 곳
+# ---- 테이블 (id = node_graph의 table 값). 손님이 입구 키오스크 배치도에서 빈 테이블을 직접 고른다
+#      x, y = 배치도에 그릴 테이블 중심 (m, 맵 좌표 · 원점 왼쪽 아래), w, h = 크기 (m, 안 쓰면 0.165 × 0.110)
 tables:
-  - {id: T1, seats: 2}          # 왼쪽 위
-  - {id: T2, seats: 6}          # 오른쪽 위 (큰 테이블)
-  - {id: T3, seats: 2}          # 왼쪽 아래
-  - {id: T4, seats: 4}          # 오른쪽 아래
+  - {id: T1, x: 0.765, y: 1.335}   # 왼쪽 위
+  - {id: T2, x: 1.385, y: 1.335}   # 오른쪽 위
+  - {id: T3, x: 0.765, y: 0.705}   # 왼쪽 아래
+  - {id: T4, x: 1.385, y: 0.705}   # 오른쪽 아래
 
 # ---- 배터리 (%) : 로봇 fleet/state 의 battery 값. 0 으로 두면 검사 안 함
 min_battery_pct: 30             # 이보다 낮으면 새 작업 안 주고 도킹에서 충전

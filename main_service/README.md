@@ -22,13 +22,13 @@ C++17 · ROS 2 Jazzy. 로봇 3대가 **서빙**(주방 → 테이블)과 **안�
 | 작업 | 단계 |
 |---|---|
 | 서빙 | `COOKING` →[조리 완료]→ `WAITING` → `ASSIGNED` → `TO_PICKUP` → `AT_PICKUP` →[적재 완료]→ `TO_TABLE` → `AT_TABLE` →[수령 / 30초]→ `TO_DOCK` → `DONE` |
-| 안내 | `WAITING`(테이블 · 입구 로봇 대기) → `ASSIGNED` → `TO_TABLE` → `AT_TABLE` →[착석 / 15초]→ `TO_DOCK` → `DONE` |
-| 테이블 | `FREE` →(안내 배정)→ `RESERVED` →(착석)→ `OCCUPIED` →(직원 정리 완료)→ `FREE` |
+| 안내 | 키오스크에서 빈 테이블 고름 → `WAITING`(입구 로봇 대기) → `ASSIGNED` → `TO_TABLE` → `AT_TABLE` →[착석 / 15초]→ `TO_DOCK` → `DONE` |
+| 테이블 | `FREE` →(키오스크에서 고름)→ `RESERVED` →(착석)→ `OCCUPIED` →(직원 정리 완료)→ `FREE` |
 
 규칙
 
 - **취소**: 서빙은 `COOKING`(조리 완료 전)에서만, 안내는 착석 전(`WAITING · ASSIGNED · TO_TABLE`)까지만. 나머지는 409.
-- **안내 테이블**: 인원 이상 좌석인 빈 테이블 중 **좌석이 가장 적은 곳**. 없으면 대기열(먼저 온 순서, 맞는 자리가 나면 바로 배정).
+- **안내 테이블**: 손님이 입구 키오스크의 **좌석 배치도에서 빈 테이블을 직접 고른다** (인원수는 받지 않음). 고르는 순간 그 테이블이 예약되고, 이미 찬 테이블이면 409 `table_not_free`. 빈자리가 없으면 키오스크에 '빈자리 없음'만 표시 (대기열 없음).
 - **안내 로봇**: `entrance_dock`(입구 도킹)에 서 있는 로봇만 안내한다.
   - 일을 마친 로봇은 입구 도킹이 비어 있으면 입구로 먼저 들어간다.
   - 입구가 비면 다른 도킹에서 쉬는 로봇을 입구로 옮긴다.
@@ -48,9 +48,9 @@ C++17 · ROS 2 Jazzy. 로봇 3대가 **서빙**(주방 → 테이블)과 **안�
 | `POST /api/tasks/{id}/ready` | 주방 | 조리 완료 |
 | `POST /api/tasks/{id}/cancel` | 고객 · 매장 · 키오스크 | 취소 (규칙 밖이면 409 `cannot_cancel`) |
 | `POST /api/tasks/{id}/confirm` `{confirm: LOADED / RECEIVED / SEATED}` | 주방 · 손님 | 확인 버튼 |
-| `POST /api/guide` `{party}` | 키오스크 | 안내 요청 → `{task_id, table, queue_pos, stage}` (`table: null` = 대기) |
+| `POST /api/guide` `{table}` | 키오스크 | 고른 테이블로 안내 요청 → `{task_id, table, stage}` (찬 테이블 409, 없는 테이블 404) |
 | `GET /api/guide/{id}` | 키오스크 | 안내 상태 |
-| `GET /api/tables` | 전부 | `[{id, seats, state, task_id}]` |
+| `GET /api/tables` | 전부 | `{board:{w,h}, entrance:{x,y}, tables:[{id, x, y, w, h, state, task_id}]}` (배치도용) |
 | `POST /api/tables/{id}/clear` | 매장 | 정리 완료 (`OCCUPIED` → `FREE`, 안내 중이면 409) |
 | `POST /api/tables/{id}/occupy` | 매장 | 안내 없이 앉은 손님 (`FREE` → `OCCUPIED`) |
 | `POST /api/robots/{id or all}/control` `{command: PAUSE / RESUME / CANCEL}` | 매장 | 로봇 제어 (CANCEL은 위 취소 규칙을 따름) |
@@ -62,11 +62,14 @@ WebSocket: `/ws/store` (snapshot에 `tables`, 로봇 `charging` 포함), `/ws/cu
 
 ## 설정 (config/main_service.yaml)
 
-새로 생긴 항목: `tables`(id · seats), `entrance_dock`, `entrance_keep_penalty_m`, `guide_timeout_sec`, `max_active_serve`, `min_battery_pct`, `ready_battery_pct`, `require_dock_start`, `display.to_table_guide / at_table_guide`
+새로 생긴 항목: `tables`(id · 배치도 좌표 x, y · 크기 w, h), `entrance_dock`, `entrance_keep_penalty_m`, `guide_timeout_sec`, `max_active_serve`, `min_battery_pct`, `ready_battery_pct`, `require_dock_start`, `display.to_table_guide / at_table_guide`
 
-맵은 **v6** (`config/node_graph.yaml`, 그림 `config/node_map_v6.png`): 왼쪽 입구 통로(입구 도킹 D1, 양방향 1차선),
-홀 테이블 2×2(T1~T4, 길 위 정차), 오른쪽 주방 통로(아래 → 위: 도킹 D2 · D3 → 픽업 대기 P1 → 픽업 P2).
-좌표는 2280 × 1820 mm 판 기준 설계값이라, SLAM 맵이 나오면 실측 좌표로 바꾼다.
+맵은 **v6.2** (`config/node_graph.yaml`, 그림 `config/node_map_v6.png`)
+- 왼쪽 입구 통로: 입구 바로 위에 입구 도킹 D1 (오른쪽 벽을 봄). 통로는 양방향 1차선
+- 홀: 테이블 2×2(T1~T4, 같은 크기), 각 테이블 **아래 가로길**에서 서빙 (위 줄 T1 · T2, 아래 줄 T3 · T4). 맨 아래 아랫길로 주방 통로에 들어감
+- 오른쪽 주방 통로: 아래 → 위로 N12(D2 앞) → N13(D3 앞) → P2(픽업 대기) → P1(픽업)
+- 오른쪽 아래 도킹 칸 2개(칸막이로 위 · 아래 칸): D3 위 칸, D2 아래 칸, 로봇은 각 칸 아래 벽(도킹 스테이션)을 봄
+- 좌표는 2280 × 1820 mm 판 기준 설계값이라, SLAM 맵이 나오면 실측 좌표로 바꾼다 (키오스크 배치도의 `tables` x, y도 같이)
 
 ## 빌드 · 실행
 

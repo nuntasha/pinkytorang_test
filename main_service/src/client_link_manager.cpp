@@ -45,14 +45,16 @@ static wvalue taskJson(const TaskView& t) {
   }
   j["items"] = std::move(items);
   j["created_at"] = t.created_at;
-  j["party"] = t.party;
   return j;
 }
 
 static wvalue tableJson(const TableView& t) {
   wvalue j;
   j["id"] = t.id;
-  j["seats"] = t.seats;
+  j["x"] = t.x;
+  j["y"] = t.y;
+  j["w"] = t.w;
+  j["h"] = t.h;
   j["state"] = toString(t.state);
   if (t.task_id >= 0) j["task_id"] = t.task_id;
   else j["task_id"] = nullptr;
@@ -65,7 +67,6 @@ static wvalue guideJson(const ApiResult& r) {
   j["task_id"] = r.task_id;
   if (!r.table.empty()) j["table"] = r.table;
   else j["table"] = nullptr;
-  j["queue_pos"] = r.queue_pos;
   j["stage"] = r.stage;
   return j;
 }
@@ -216,12 +217,12 @@ void ClientLinkManager::setupRoutes() {
     return okResponse();
   });
 
-  // ---- POST /api/guide {"party":3}  (입구 키오스크)
+  // ---- POST /api/guide {"table":"T3"}  (입구 키오스크: 손님이 배치도에서 고른 빈 테이블)
   CROW_ROUTE(app_, "/api/guide").methods("POST"_method)([this](const crow::request& req) {
     logLine("HTTP", "POST /api/guide " + req.body);
     crow::json::rvalue body = crow::json::load(req.body);
-    if (!body || !body.has("party")) return errorResponse(400, "bad_request");
-    ApiResult r = tasks_.requestGuide(static_cast<int>(body["party"].i()));
+    if (!body || !body.has("table")) return errorResponse(400, "bad_request");
+    ApiResult r = tasks_.requestGuide(std::string(body["table"].s()));
     if (r.status != 200) return errorResponse(r.status, r.error);
     return jsonResponse(200, guideJson(r));
   });
@@ -233,12 +234,20 @@ void ClientLinkManager::setupRoutes() {
     return jsonResponse(200, guideJson(r));
   });
 
-  // ---- GET /api/tables
+  // ---- GET /api/tables  (키오스크 배치도: 판 크기 · 입구 위치 · 테이블 위치와 상태)
   CROW_ROUTE(app_, "/api/tables")([this]() {
     wvalue j;
     wvalue::list arr;
     for (const TableView& t : tasks_.tables()) arr.push_back(tableJson(t));
     j["tables"] = std::move(arr);
+    j["board"]["w"] = cfg_.board_w;
+    j["board"]["h"] = cfg_.board_h;
+    for (const MapNodeView& n : tasks_.mapView().nodes) {
+      if (n.id == cfg_.entrance_dock) {
+        j["entrance"]["x"] = n.x;
+        j["entrance"]["y"] = n.y;
+      }
+    }
     return jsonResponse(200, j);
   });
 

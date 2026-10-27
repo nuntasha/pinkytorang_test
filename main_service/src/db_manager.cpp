@@ -63,13 +63,12 @@ int DBManager::maxTaskId() { return queryInt("SELECT COALESCE(MAX(task_id), 0) F
 int DBManager::maxOrderId() { return queryInt("SELECT COALESCE(MAX(order_id), 0) FROM tasks"); }
 
 void DBManager::saveTask(const TaskView& t) {
-  // 메뉴는 "토마토 파스타 x2, 레몬에이드 x1" 같은 글자로 저장 (기록용). 안내는 "3명"
+  // 메뉴는 "토마토 파스타 x2, 레몬에이드 x1" 같은 글자로 저장 (기록용). 안내는 빈 칸
   std::string items;
   for (size_t i = 0; i < t.items.size(); ++i) {
     if (i > 0) items += ", ";
     items += t.items[i].name + " x" + std::to_string(t.items[i].qty);
   }
-  if (t.kind == TaskKind::GUIDE) items = std::to_string(t.party) + "명";
   std::string now = nowIsoUtc();
 
   const char* sql =

@@ -1,52 +1,102 @@
 // 핑키토랑 입구 키오스크
-// - 인원을 고르면 POST /api/guide. 서버가 인원에 맞는 빈 테이블을 고르고 입구 로봇이 안내한다
-// - 빈 테이블이 없으면 대기열. 2초마다 GET /api/guide/<id> 로 순번 · 테이블을 물어본다
-// - 판단하지 않는다. 화면은 서버가 준 table / queue_pos / stage 를 그대로 보여 준다
+// - 좌석 배치도를 보여 주고, 손님이 빈 테이블을 고르면 POST /api/guide {table}
+//   서버가 그 테이블을 예약하고 입구 로봇이 안내한다
+// - 테이블 상태(빈자리 / 사용 중)는 매장 snapshot으로 실시간으로 바뀐다
+// - 판단하지 않는다. 빈자리인지는 서버가 최종 확인한다 (이미 찼으면 409)
 
 const $ = (id) => document.getElementById(id);
-const state = { party: 2, maxParty: 6, taskId: null, poll: null, resetTimer: null };
+const state = { board: { w: 2.28, h: 1.82 }, entrance: null, tables: [], selected: null, taskId: null, poll: null, resetTimer: null };
 const ENDED = ['DONE', 'FAILED', 'CANCELED'];
+const MIN_W = 104, MIN_H = 72;   // 손가락으로 누를 수 있는 최소 크기 (px)
 
-$('minusBtn').onclick = () => setParty(state.party - 1);
-$('plusBtn').onclick = () => setParty(state.party + 1);
 $('guideBtn').onclick = requestGuide;
 $('homeBtn').onclick = reset;
-$('cancelBtn').onclick = cancelWait;
+$('cancelBtn').onclick = cancelGuide;
+window.addEventListener('resize', renderFloor);
 
-openSocket('/ws/store', () => {}, (on) => {     // 연결 표시만 (데이터는 HTTP로 물어봄)
+// 매장 snapshot을 같이 받아서 테이블 상태를 바로 반영 (연결 표시도 겸함)
+openSocket('/ws/store', (msg) => {
+  if (msg.type !== 'snapshot' || !msg.tables) return;
+  mergeTables(msg.tables);
+}, (on) => {
   $('conn').className = 'conn ' + (on ? 'on' : 'off');
   $('conn').textContent = on ? '' : '서버 연결 중';
+  if (on) loadLayout();
 });
 
-loadMaxParty();
-setParty(2);
+loadLayout();
 
-async function loadMaxParty() {
+async function loadLayout() {
   const r = await api('GET', '/api/tables');
   if (!r.ok) return;
-  const seats = (r.data.tables || []).map((t) => t.seats);
-  if (seats.length) state.maxParty = Math.max(...seats);
-  setParty(state.party);
+  if (r.data.board) state.board = r.data.board;
+  state.entrance = r.data.entrance || null;
+  state.tables = r.data.tables || [];
+  renderFloor();
 }
 
-function setParty(n) {
-  state.party = Math.max(1, Math.min(state.maxParty, n));
-  $('partyNum').textContent = state.party;
-  $('minusBtn').disabled = state.party <= 1;
-  $('plusBtn').disabled = state.party >= state.maxParty;
-  $('partyHint').textContent = state.party >= state.maxParty ? `최대 ${state.maxParty}명까지 한 테이블에 앉을 수 있어요` : '';
+function mergeTables(list) {
+  const byId = Object.fromEntries(list.map((t) => [t.id, t]));
+  let changed = false;
+  state.tables.forEach((t) => {
+    const n = byId[t.id];
+    if (n && n.state !== t.state) { t.state = n.state; changed = true; }
+  });
+  if (!changed) return;
+  const sel = state.tables.find((t) => t.id === state.selected);
+  if (sel && sel.state !== 'FREE' && !$('pickView').hidden) {
+    state.selected = null;
+    toast('고르신 자리가 방금 찼어요. 다른 자리를 골라 주세요');
+  }
+  renderFloor();
+}
+
+// 맵 좌표(m, 원점 왼쪽 아래)를 화면(px, 원점 왼쪽 위)으로
+function renderFloor() {
+  const wrap = document.querySelector('.floor-wrap');
+  const pad = 8;
+  if (!wrap.clientWidth) return;   // 안내 화면일 때는 안 그림
+  const scale = Math.min((wrap.clientWidth - pad * 2) / state.board.w, (wrap.clientHeight - pad * 2) / state.board.h);
+  const W = state.board.w * scale, H = state.board.h * scale;
+  const floor = $('floor');
+  floor.style.width = W + 'px';
+  floor.style.height = H + 'px';
+  const px = (x) => x * scale, py = (y) => H - y * scale;
+
+  let html = state.tables.map((t) => {
+    const w = Math.max(MIN_W, (t.w || 0.165) * scale), h = Math.max(MIN_H, (t.h || 0.11) * scale);
+    const free = t.state === 'FREE';
+    return `<button class="tbl ${t.id === state.selected ? 'selected' : ''}" data-id="${esc(t.id)}" ${free ? '' : 'disabled'}
+      style="left:${px(t.x)}px; top:${py(t.y)}px; width:${w}px; height:${h}px">${esc(t.id)}<small>${free ? '빈자리' : '사용 중'}</small></button>`;
+  }).join('');
+  if (state.entrance) html += `<span class="here" style="left:${Math.max(70, px(state.entrance.x))}px; top:${py(state.entrance.y)}px">지금 여기 (입구)</span>`;
+  floor.innerHTML = html;
+  floor.querySelectorAll('.tbl').forEach((b) => { b.onclick = () => selectTable(b.dataset.id); });
+
+  const sel = state.selected;
+  $('guideBtn').disabled = !sel;
+  $('guideBtn').textContent = sel ? `${sel} 자리로 안내 받기` : '자리를 골라 주세요';
+  const anyFree = state.tables.some((t) => t.state === 'FREE');
+  $('pickSub').textContent = anyFree ? '빈자리를 누르면 로봇이 안내해 드려요' : '지금은 빈자리가 없어요. 잠시만 기다려 주세요';
+}
+
+function selectTable(id) {
+  state.selected = state.selected === id ? null : id;
+  renderFloor();
 }
 
 async function requestGuide() {
+  if (!state.selected) return;
   $('guideBtn').disabled = true;
-  const r = await api('POST', '/api/guide', { party: state.party });
-  $('guideBtn').disabled = false;
+  const r = await api('POST', '/api/guide', { table: state.selected });
   if (!r.ok) {
-    if (r.data && r.data.error === 'party_too_large') toast(`최대 ${state.maxParty}명까지 가능해요. 직원을 불러 주세요`);
+    $('guideBtn').disabled = false;
+    if (r.status === 409) { toast('방금 다른 손님이 고른 자리예요. 다른 자리를 골라 주세요'); state.selected = null; loadLayout(); }
     else toast(r.status === 0 ? '서버에 연결할 수 없어요' : '요청하지 못했어요. 직원을 불러 주세요');
     return;
   }
   state.taskId = r.data.task_id;
+  state.selected = null;   // 이제 이 손님 자리는 예약됨 (snapshot에서 '찼다'고 알리지 않게)
   showStatus(r.data);
   clearInterval(state.poll);
   state.poll = setInterval(poll, 2000);
@@ -62,44 +112,34 @@ function showStatus(g) {
   $('pickView').hidden = true;
   $('resultView').hidden = false;
   const badge = $('resultBadge');
+  badge.className = 'result-badge';
+  badge.textContent = g.table;
 
-  if (ENDED.includes(g.stage) || g.stage === 'AT_TABLE' || g.stage === 'TO_DOCK') {   // 안내가 끝났거나 끝나 감
-    if (g.stage === 'CANCELED' || g.stage === 'FAILED') {
-      badge.className = 'result-badge wait';
-      badge.textContent = '!';
-      $('resultTitle').textContent = g.stage === 'CANCELED' ? '안내를 취소했어요' : '안내하지 못했어요';
-      $('resultSub').textContent = '직원을 불러 주세요';
-    }
+  if (g.stage === 'CANCELED' || g.stage === 'FAILED') {
+    badge.className = 'result-badge warn';
+    badge.textContent = '!';
+    $('resultTitle').textContent = g.stage === 'CANCELED' ? '안내를 취소했어요' : '안내하지 못했어요';
+    $('resultSub').textContent = '직원을 불러 주세요';
     $('cancelBtn').hidden = true;
     stopPolling();
     autoReset(6);
     return;
   }
-
-  if (!g.table) {                                     // 만석 -> 대기
-    badge.className = 'result-badge wait';
-    badge.textContent = `${g.queue_pos}번`;
-    $('resultTitle').textContent = '지금은 자리가 없어요';
-    $('resultSub').textContent = '자리가 나면 이 화면에 알려 드릴게요. 잠시만 기다려 주세요';
-    $('cancelBtn').hidden = false;
-    return;
-  }
-
-  badge.className = 'result-badge';
-  badge.textContent = g.table;
-  $('cancelBtn').hidden = true;
-  if (g.stage === 'TO_TABLE') {
+  if (g.stage === 'TO_TABLE' || g.stage === 'AT_TABLE' || ENDED.includes(g.stage) || g.stage === 'TO_DOCK') {
     $('resultTitle').textContent = `${g.table} 자리로 안내할게요`;
     $('resultSub').textContent = '로봇을 따라가 주세요';
-    stopPolling();       // 다음 손님이 쓸 수 있게 잠시 뒤 처음 화면으로
+    $('cancelBtn').hidden = true;
+    stopPolling();          // 다음 손님이 쓸 수 있게 잠시 뒤 처음 화면으로
     autoReset(8);
-  } else {                                            // 테이블은 정해졌고 입구 로봇을 기다림
-    $('resultTitle').textContent = `${g.table} 자리가 준비됐어요`;
-    $('resultSub').textContent = '안내 로봇이 곧 출발해요';
+    return;
   }
+  // WAITING / ASSIGNED: 입구 로봇을 기다리는 중
+  $('resultTitle').textContent = `${g.table} 자리를 잡아 뒀어요`;
+  $('resultSub').textContent = '안내 로봇이 곧 출발해요. 잠시만 기다려 주세요';
+  $('cancelBtn').hidden = false;
 }
 
-async function cancelWait() {
+async function cancelGuide() {
   if (state.taskId == null) return;
   $('cancelBtn').disabled = true;
   const r = await api('POST', `/api/tasks/${state.taskId}/cancel`);
@@ -119,7 +159,8 @@ function reset() {
   stopPolling();
   clearTimeout(state.resetTimer);
   state.taskId = null;
+  state.selected = null;
   $('resultView').hidden = true;
   $('pickView').hidden = false;
-  setParty(2);
+  loadLayout();
 }

@@ -80,7 +80,6 @@ struct TaskView {
   TaskKind kind = TaskKind::SERVE;
   std::string table;
   int order_id = -1;      // -1 = 없음 (안내 작업)
-  int party = 0;          // 안내 인원 (서빙은 0)
   Stage stage = Stage::WAITING;
   std::string robot_id;   // "" = 미배정
   std::vector<OrderItem> items;
@@ -102,7 +101,7 @@ struct RobotView {
 
 struct TableView {
   std::string id;
-  int seats = 0;
+  double x = 0.0, y = 0.0, w = 0.0, h = 0.0;  // 배치도 그림용 (m, 중심 좌표)
   TableState state = TableState::FREE;
   int task_id = -1;       // 이 테이블로 안내 중인 작업 (-1 = 없음)
 };
@@ -160,8 +159,7 @@ struct ApiResult {
   std::string error;      // status != 200 일 때 {"error": ...}
   int task_id = -1;
   int order_id = -1;
-  std::string table;      // 안내: 배정된 테이블 ("" = 만석이라 대기)
-  int queue_pos = 0;      // 안내: 대기 순번 (0 = 대기 아님)
+  std::string table;      // 안내: 손님이 고른 테이블
   std::string stage;      // 안내 상태 조회용 (Stage 이름)
 };
 

@@ -22,7 +22,10 @@ struct DisplayTexts {
 
 struct TableConfig {
   std::string id;   // 노드 그래프의 table 값과 같아야 함
-  int seats = 2;
+  double x = 0.0;   // 키오스크 배치도에 그릴 테이블 중심 (m, 맵 좌표)
+  double y = 0.0;
+  double w = 0.165; // 테이블 크기 (m)
+  double h = 0.110;
 };
 
 struct Config {

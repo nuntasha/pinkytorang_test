@@ -31,7 +31,6 @@ TaskManager::TaskManager(const Config& cfg, const MapManager& map, TrafficManage
     Table tb;
     tb.id = tc.id;
     tb.node = node;
-    tb.seats = tc.seats;
     tables_[tc.id] = tb;
   }
   const MapNode* e = map_.node(cfg.entrance_dock);
@@ -121,31 +120,29 @@ ApiResult TaskManager::cancelTask(int task_id) {
   return ApiResult();
 }
 
-ApiResult TaskManager::requestGuide(int party) {
+ApiResult TaskManager::requestGuide(const std::string& table) {
   std::lock_guard<std::mutex> lock(mutex_);
-  int max_seats = 0;
-  for (auto& pair : tables_) {
-    if (pair.second.seats > max_seats) max_seats = pair.second.seats;
-  }
-  if (party < 1) return errorResult(400, "bad_party");
-  if (party > max_seats) return errorResult(400, "party_too_large");
+  Table* tb = findTable(table);
+  if (!tb) return errorResult(404, "unknown_table");
+  if (tb->state != TableState::FREE) return errorResult(409, "table_not_free");  // 다른 키오스크가 먼저 골랐거나 사용 중
 
   Task t;
   t.id = next_task_id_++;
   t.kind = TaskKind::GUIDE;
-  t.party = party;
+  t.table = tb->id;
+  t.table_node = tb->node;
   t.created_at = nowIsoUtc();
   tasks_[t.id] = t;
+  setTable(*tb, TableState::RESERVED, t.id);  // 고른 순간 예약 (다른 손님이 못 고르게)
   db_.saveTask(view(t));
-  record("ORDER", "guide " + std::to_string(party) + "명 -> task " + std::to_string(t.id));
+  record("ORDER", "guide " + table + " -> task " + std::to_string(t.id));
   dirty_ = true;
-  afterChange();  // 여기서 빈 테이블이 있으면 바로 정해진다
+  afterChange();  // 입구 로봇이 있으면 바로 출발
 
   Task& now = tasks_[t.id];
   ApiResult ok;
   ok.task_id = now.id;
   ok.table = now.table;
-  ok.queue_pos = queuePos(now);
   ok.stage = toString(now.stage);
   return ok;
 }
@@ -157,7 +154,6 @@ ApiResult TaskManager::guideStatus(int task_id) {
   ApiResult r;
   r.task_id = t->id;
   r.table = t->table;
-  r.queue_pos = queuePos(*t);
   r.stage = toString(t->stage);
   return r;
 }
@@ -357,7 +353,6 @@ void TaskManager::tick() {
 void TaskManager::afterChange() {
   processArrivals();
   retryDocks();
-  assignTables();
   dispatchGuide();
   dispatchServe();
   sendIdleRobotsHome();
@@ -396,38 +391,11 @@ bool TaskManager::robotFree(const Robot& r) {
   return robotUsable(r) && !r.charging && r.task_id < 0 && !r.homing;
 }
 
-// 테이블을 기다리는 안내(먼저 온 순서)에 빈 테이블을 정해 준다
-void TaskManager::assignTables() {
-  for (auto& pair : tasks_) {
-    Task& t = pair.second;
-    if (t.kind != TaskKind::GUIDE || t.stage != Stage::WAITING || !t.table.empty()) continue;
-
-    std::vector<TableConfig> free_tables;
-    for (auto& tp : tables_) {
-      if (tp.second.state != TableState::FREE) continue;
-      TableConfig c;
-      c.id = tp.second.id;
-      c.seats = tp.second.seats;
-      free_tables.push_back(c);
-    }
-    std::string table = dispatch_.pickTable(free_tables, t.party);
-    if (table.empty()) continue;  // 맞는 자리가 없으면 다음 손님 (작은 테이블은 날 수 있음)
-
-    Table& tb = tables_[table];
-    setTable(tb, TableState::RESERVED, t.id);
-    t.table = tb.id;
-    t.table_node = tb.node;
-    db_.saveTask(view(t));
-    record("TASK", "guide task " + std::to_string(t.id) + " " + std::to_string(t.party) + "명 -> " + tb.id);
-    dirty_ = true;
-  }
-}
-
-// 테이블이 정해진 안내는 입구 도킹에 서 있는 로봇이 맡는다
+// 안내는 입구 도킹에 서 있는 로봇이 맡는다
 void TaskManager::dispatchGuide() {
   for (auto& pair : tasks_) {
     Task& t = pair.second;
-    if (t.kind != TaskKind::GUIDE || t.stage != Stage::WAITING || t.table.empty()) continue;
+    if (t.kind != TaskKind::GUIDE || t.stage != Stage::WAITING) continue;
     if (tableBusy(t.table)) continue;  // 그 테이블에 서빙 로봇이 아직 있으면 떠난 뒤에
 
     std::string robot_id;
@@ -746,19 +714,9 @@ bool TaskManager::tableBusy(const std::string& table) const {
 bool TaskManager::hasWaitingGuide() const {
   for (auto& pair : tasks_) {
     const Task& t = pair.second;
-    if (t.kind == TaskKind::GUIDE && t.stage == Stage::WAITING && !t.table.empty()) return true;
+    if (t.kind == TaskKind::GUIDE && t.stage == Stage::WAITING) return true;
   }
   return false;
-}
-
-int TaskManager::queuePos(const Task& t) const {
-  if (t.kind != TaskKind::GUIDE || t.stage != Stage::WAITING || !t.table.empty()) return 0;
-  int pos = 0;
-  for (auto& pair : tasks_) {
-    const Task& o = pair.second;
-    if (o.kind == TaskKind::GUIDE && o.stage == Stage::WAITING && o.table.empty() && o.id <= t.id) pos++;
-  }
-  return pos;
 }
 
 TaskManager::Robot* TaskManager::findRobot(const std::string& id) {
@@ -785,7 +743,6 @@ TaskView TaskManager::view(const Task& t) const {
   v.kind = t.kind;
   v.table = t.table;
   v.order_id = t.order_id;
-  v.party = t.party;
   v.stage = t.stage;
   v.robot_id = t.robot;
   v.items = t.items;
@@ -823,7 +780,10 @@ SnapshotView TaskManager::buildSnapshot() {
     if (it == tables_.end()) continue;
     TableView tv;
     tv.id = it->second.id;
-    tv.seats = it->second.seats;
+    tv.x = tc.x;
+    tv.y = tc.y;
+    tv.w = tc.w;
+    tv.h = tc.h;
     tv.state = it->second.state;
     tv.task_id = it->second.task_id;
     s.tables.push_back(tv);

@@ -7,7 +7,8 @@
 // 서빙: COOKING [조리 완료] → WAITING → ASSIGNED → TO_PICKUP → AT_PICKUP [LOADED]
 //       → TO_TABLE → AT_TABLE [RECEIVED/시간초과] → TO_DOCK → DONE
 //       취소는 COOKING 에서만
-// 안내: WAITING (테이블 · 입구 로봇 기다림) → ASSIGNED → TO_TABLE → AT_TABLE [SEATED/시간초과]
+// 안내: 키오스크에서 손님이 빈 테이블을 고름 → 그 테이블 RESERVED
+//       WAITING (입구 로봇 기다림) → ASSIGNED → TO_TABLE → AT_TABLE [SEATED/시간초과]
 //       → TO_DOCK → DONE.  취소는 착석 전(WAITING · ASSIGNED · TO_TABLE)까지
 // 테이블: FREE → (안내 배정) RESERVED → (착석) OCCUPIED → (직원 정리 완료) FREE
 #pragma once
@@ -40,8 +41,8 @@ class TaskManager {
   ApiResult createOrder(const std::string& table, const std::vector<OrderItem>& items);  // -> COOKING
   ApiResult markCooked(int task_id);   // 주방: 조리 완료 (COOKING -> WAITING)
   ApiResult cancelTask(int task_id);   // 서빙은 COOKING, 안내는 착석 전까지만
-  ApiResult requestGuide(int party);   // 입구 키오스크: 인원수 -> 안내 작업 (빈 테이블 없으면 대기열)
-  ApiResult guideStatus(int task_id);  // 키오스크: 테이블 · 대기 순번 · 단계
+  ApiResult requestGuide(const std::string& table);  // 입구 키오스크: 손님이 고른 빈 테이블 -> 안내 작업
+  ApiResult guideStatus(int task_id);                 // 키오스크: 테이블 · 단계
   ApiResult clearTable(const std::string& table);   // 직원: 정리 완료 (OCCUPIED -> FREE)
   ApiResult occupyTable(const std::string& table);  // 직원: 안내 없이 앉은 손님 (FREE -> OCCUPIED)
   ApiResult confirm(int task_id, Confirm c);
@@ -68,10 +69,9 @@ class TaskManager {
   struct Task {
     int id = 0;
     TaskKind kind = TaskKind::SERVE;
-    std::string table;                 // 안내는 대기 중이면 ""
+    std::string table;
     std::string table_node;
     int order_id = -1;
-    int party = 0;                     // 안내 인원
     std::vector<OrderItem> items;
     Stage stage = Stage::WAITING;
     std::string robot;
@@ -105,7 +105,6 @@ class TaskManager {
   struct Table {
     std::string id;
     std::string node;
-    int seats = 0;
     TableState state = TableState::FREE;
     int task_id = -1;       // RESERVED 일 때 안내 작업
   };
@@ -113,7 +112,6 @@ class TaskManager {
   // 작업 흐름
   void afterChange();
   void processArrivals();
-  void assignTables();       // 대기 중인 안내에 빈 테이블
   void dispatchGuide();      // 테이블 정해진 안내 -> 입구 로봇
   void dispatchServe();      // 조리 완료된 서빙 -> 가까운 로봇
   void sendIdleRobotsHome();
@@ -136,7 +134,6 @@ class TaskManager {
   bool hasWaitingGuide() const;
   bool tableBusy(const std::string& table) const;  // 그 테이블로 가는 중이거나 서 있는 로봇이 있나 (종류 상관없이)
   bool entranceOk(const std::string& robot_id);  // 배터리가 충분해서 입구 도킹에 세워도 되나
-  int queuePos(const Task& t) const;   // 테이블 기다리는 안내 중 몇 번째 (1부터, 대기 아님 0)
   Robot* findRobot(const std::string& id);
   Task* findTask(int id);
   Table* findTable(const std::string& id);

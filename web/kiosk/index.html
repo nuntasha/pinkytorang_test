@@ -13,25 +13,29 @@
     <span id="conn" class="conn">연결 중</span>
   </header>
 
-  <!-- 1. 인원 선택 -->
-  <section id="pickView" class="view">
-    <h1>몇 분이세요?</h1>
-    <div class="party">
-      <button id="minusBtn" class="round" aria-label="한 명 빼기">−</button>
-      <div class="party-num"><span id="partyNum" class="num">2</span><small>명</small></div>
-      <button id="plusBtn" class="round" aria-label="한 명 더하기">+</button>
+  <!-- 1. 좌석 배치도에서 테이블 고르기 -->
+  <section id="pickView" class="pick">
+    <div class="floor-wrap">
+      <div id="floor" class="floor"></div>
     </div>
-    <p id="partyHint" class="hint"></p>
-    <button id="guideBtn" class="btn btn-primary big">자리 안내 받기</button>
+    <aside class="panel">
+      <h1 id="pickTitle">원하시는 자리를<br>골라 주세요</h1>
+      <p id="pickSub" class="hint">빈자리를 누르면 로봇이 안내해 드려요</p>
+      <div class="legend">
+        <span><i class="sw free"></i>빈자리</span>
+        <span><i class="sw busy"></i>사용 중</span>
+      </div>
+      <button id="guideBtn" class="btn btn-primary big" disabled>자리를 골라 주세요</button>
+    </aside>
   </section>
 
-  <!-- 2. 결과 -->
-  <section id="resultView" class="view" hidden>
+  <!-- 2. 안내 상태 -->
+  <section id="resultView" class="result" hidden>
     <div id="resultBadge" class="result-badge"></div>
     <h1 id="resultTitle"></h1>
     <p id="resultSub" class="hint"></p>
     <div class="result-actions">
-      <button id="cancelBtn" class="btn btn-ghost big" hidden>대기 취소</button>
+      <button id="cancelBtn" class="btn btn-ghost big" hidden>취소</button>
       <button id="homeBtn" class="btn btn-dark big">처음으로</button>
     </div>
   </section>
