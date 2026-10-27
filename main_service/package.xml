@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkytorang_main</name>
+  <version>0.1.0</version>
+  <description>핑키토랑 Main Service: 작업 관리 · 로봇 배정 · 노드 lock 교통 관제 · UI 연결 (fleet_msgs v4)</description>
+  <maintainer email="sm990627@gmail.com">pinkytorang</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>fleet_msgs</depend>
+  <depend>yaml-cpp</depend>
+  <depend>sqlite3</depend>
+  <build_depend>asio</build_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

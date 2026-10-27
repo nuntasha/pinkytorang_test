@@ -1,0 +1,29 @@
+/* 입구 키오스크 - 7인치 1024x600 터치 화면 기준. 손가락으로 누르기 쉽게 크게 */
+html, body { height: 100%; overflow: hidden; user-select: none; }
+body { display: flex; flex-direction: column; }
+
+.top { height: 64px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; font-size: 20px; }
+
+.view { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 0 40px 40px; }
+h1 { font-size: 44px; font-weight: 800; letter-spacing: -.03em; text-align: center; line-height: 1.25; }
+.hint { font-size: 20px; color: var(--muted); text-align: center; min-height: 30px; }
+
+.party { display: flex; align-items: center; gap: 40px; }
+.round {
+  width: 110px; height: 110px; border-radius: 50%; background: var(--surface); border: 2px solid var(--line);
+  font-size: 56px; font-weight: 300; line-height: 1;
+}
+.round:active:not(:disabled) { background: var(--surface-2); transform: scale(.97); }
+.party-num { width: 200px; text-align: center; }
+.party-num span { font-size: 120px; font-weight: 800; letter-spacing: -.04em; line-height: 1; }
+.party-num small { font-size: 32px; font-weight: 600; color: var(--muted); margin-left: 6px; }
+
+.btn.big { height: 84px; min-width: 360px; padding: 0 40px; font-size: 28px; border-radius: 18px; }
+
+.result-badge {
+  min-width: 180px; height: 180px; padding: 0 28px; border-radius: 36px; background: var(--accent); color: #fff;
+  display: grid; place-items: center; font-size: 80px; font-weight: 800; letter-spacing: -.03em;
+}
+.result-badge.wait { background: var(--surface); color: var(--text); border: 2px solid var(--line); font-size: 64px; }
+.result-actions { display: flex; gap: 16px; }
+.result-actions .btn.big { min-width: 260px; }

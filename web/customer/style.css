@@ -1,0 +1,128 @@
+/* 고객 UI - 휴대폰 세로 화면 기준 */
+body { min-height: 100dvh; }
+#app { max-width: 520px; margin: 0 auto; padding-bottom: 110px; }
+
+.no-table {
+  min-height: 100dvh; display: grid; place-content: center; gap: 14px;
+  text-align: center; color: var(--muted); padding: 24px;
+}
+.no-table .brand { justify-content: center; color: var(--text); font-size: 20px; }
+
+/* 상단 */
+.top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 20px 10px; font-size: 17px;
+}
+.top-right { display: flex; align-items: center; gap: 12px; }
+.table-chip {
+  font-size: 13px; font-weight: 700; padding: 5px 11px; border-radius: 999px;
+  background: var(--text); color: #fff; letter-spacing: .02em;
+}
+
+/* 탭 */
+.tabs {
+  position: sticky; top: 0; z-index: 5; display: flex; gap: 6px;
+  padding: 8px 20px 12px; background: var(--bg);
+}
+.tab {
+  flex: 1; height: 40px; border-radius: 999px; font-weight: 600; font-size: 14px;
+  color: var(--muted); background: transparent; display: inline-flex; align-items: center;
+  justify-content: center; gap: 6px;
+}
+.tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.tab-badge {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; font-size: 11px;
+  background: var(--accent); color: #fff; display: inline-grid; place-items: center;
+}
+
+.view { padding: 4px 16px; }
+
+/* 메뉴 */
+.menu-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.menu-item {
+  display: flex; align-items: center; gap: 14px; padding: 16px;
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.menu-thumb {
+  width: 52px; height: 52px; border-radius: 12px; flex: none;
+  background: var(--accent-weak); color: var(--accent-ink);
+  display: grid; place-items: center; font-weight: 700; font-size: 18px;
+}
+.menu-body { flex: 1; min-width: 0; }
+.menu-name { font-weight: 600; }
+.menu-desc { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu-price { font-size: 14px; font-weight: 600; margin-top: 2px; }
+
+.stepper { display: flex; align-items: center; gap: 2px; flex: none; }
+.stepper button {
+  width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--line); font-size: 18px; line-height: 1;
+}
+.stepper .plus { background: var(--text); border-color: var(--text); color: #fff; }
+.stepper .qty { width: 26px; text-align: center; font-weight: 700; }
+.menu-item.zero .minus, .menu-item.zero .qty { visibility: hidden; }
+
+/* 장바구니 바 */
+.cart-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bg) 70%, transparent);
+}
+.cart-btn {
+  width: 100%; max-width: 488px; margin: 0 auto; display: flex; justify-content: space-between;
+  height: 54px; border-radius: var(--radius); font-size: 16px; padding: 0 20px;
+}
+
+/* 조리 중 주문 취소 */
+.cancel-btn { width: 100%; height: 38px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+
+/* 내 주문 */
+.order-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.order {
+  padding: 16px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.order.done { opacity: .6; box-shadow: none; border: 1px solid var(--line); }
+.order-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.order-title { font-weight: 700; }
+.order-time { font-size: 12px; color: var(--faint); }
+.order-items { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.order-status { margin-top: 12px; font-weight: 600; font-size: 14px; }
+.order-status.arrived { color: var(--accent); }
+.order-status.bad { color: var(--err); }
+
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 10px; }
+.step { height: 4px; border-radius: 999px; background: var(--line); }
+.step.on { background: var(--accent); }
+.step-labels { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 6px; }
+.step-labels span { font-size: 11px; color: var(--faint); }
+.step-labels span.on { color: var(--text); font-weight: 600; }
+
+/* 도착 시트 */
+.sheet-wrap {
+  position: fixed; inset: 0; z-index: 50; background: rgba(20, 20, 22, .45);
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: fade .2s ease;
+}
+.sheet {
+  width: 100%; max-width: 520px; background: var(--surface);
+  border-radius: 24px 24px 0 0; padding: 32px 24px calc(24px + env(safe-area-inset-bottom));
+  text-align: center; animation: up .25s ease;
+}
+.sheet h2 { font-size: 22px; letter-spacing: -.02em; margin-top: 18px; }
+.sheet p { color: var(--muted); margin-top: 6px; }
+.sheet-btn { width: 100%; height: 58px; margin-top: 24px; font-size: 17px; border-radius: var(--radius); }
+
+.ring { position: relative; width: 120px; height: 120px; margin: 0 auto; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 8; }
+.ring-bg { stroke: var(--accent-weak); }
+.ring-fg { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.ring-text {
+  position: absolute; inset: 0; display: flex; align-items: baseline; justify-content: center;
+  padding-top: 40px; font-size: 32px; font-weight: 700;
+}
+.ring-text small { font-size: 14px; color: var(--muted); margin-left: 2px; font-weight: 500; }
+.ring.nocount .ring-text { font-size: 15px; padding-top: 50px; }
+
+@keyframes up { from { transform: translateY(40px); opacity: 0; } }
+@keyframes fade { from { opacity: 0; } }

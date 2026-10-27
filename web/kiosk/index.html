@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>핑키토랑 · 입구</title>
+  <link rel="stylesheet" href="/common/base.css">
+  <link rel="stylesheet" href="/kiosk/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="brand-mark"></span>핑키토랑</div>
+    <span id="conn" class="conn">연결 중</span>
+  </header>
+
+  <!-- 1. 인원 선택 -->
+  <section id="pickView" class="view">
+    <h1>몇 분이세요?</h1>
+    <div class="party">
+      <button id="minusBtn" class="round" aria-label="한 명 빼기">−</button>
+      <div class="party-num"><span id="partyNum" class="num">2</span><small>명</small></div>
+      <button id="plusBtn" class="round" aria-label="한 명 더하기">+</button>
+    </div>
+    <p id="partyHint" class="hint"></p>
+    <button id="guideBtn" class="btn btn-primary big">자리 안내 받기</button>
+  </section>
+
+  <!-- 2. 결과 -->
+  <section id="resultView" class="view" hidden>
+    <div id="resultBadge" class="result-badge"></div>
+    <h1 id="resultTitle"></h1>
+    <p id="resultSub" class="hint"></p>
+    <div class="result-actions">
+      <button id="cancelBtn" class="btn btn-ghost big" hidden>대기 취소</button>
+      <button id="homeBtn" class="btn btn-dark big">처음으로</button>
+    </div>
+  </section>
+
+  <script src="/common/link.js"></script>
+  <script src="/kiosk/app.js"></script>
+</body>
+</html>

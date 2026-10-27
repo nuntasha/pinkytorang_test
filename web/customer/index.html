@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f6f4">
+  <title>핑키토랑</title>
+  <link rel="stylesheet" href="/common/base.css">
+  <link rel="stylesheet" href="/customer/style.css">
+</head>
+<body>
+  <!-- QR 없이 들어온 경우 -->
+  <div id="noTable" class="no-table" hidden>
+    <div class="brand"><span class="brand-mark"></span>핑키토랑</div>
+    <p>테이블의 QR 코드를 다시 찍어주세요.</p>
+  </div>
+
+  <div id="app" hidden>
+    <header class="top">
+      <div class="brand"><span class="brand-mark"></span>핑키토랑</div>
+      <div class="top-right">
+        <span id="conn" class="conn">연결 중</span>
+        <span id="tableChip" class="table-chip"></span>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-view="menu">메뉴</button>
+      <button class="tab" data-view="orders">내 주문 <span id="activeCount" class="tab-badge" hidden></span></button>
+    </nav>
+
+    <main>
+      <section id="view-menu" class="view">
+        <ul id="menuList" class="menu-list"></ul>
+      </section>
+
+      <section id="view-orders" class="view" hidden>
+        <ul id="orderList" class="order-list"></ul>
+      </section>
+    </main>
+
+    <div id="cartBar" class="cart-bar" hidden>
+      <button id="orderBtn" class="btn btn-primary cart-btn">
+        <span><span id="cartCount" class="num">0</span>개 주문하기</span>
+        <span id="cartTotal" class="num"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 로봇 도착 (서버의 confirm_needed로만 열림) -->
+  <div id="sheet" class="sheet-wrap" hidden>
+    <div class="sheet">
+      <div class="ring">
+        <svg viewBox="0 0 120 120">
+          <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+          <circle id="ringFg" class="ring-fg" cx="60" cy="60" r="52"></circle>
+        </svg>
+        <div class="ring-text"><span id="ringNum" class="num"></span><small id="ringUnit">초</small></div>
+      </div>
+      <h2 id="sheetTitle"></h2>
+      <p id="sheetSub"></p>
+      <button id="sheetBtn" class="btn btn-primary sheet-btn"></button>
+    </div>
+  </div>
+
+  <script src="/common/link.js"></script>
+  <script src="/customer/app.js"></script>
+</body>
+</html>

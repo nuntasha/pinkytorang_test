@@ -1,0 +1,64 @@
+// Map Manager: node_graph.yaml (fleet_msgs v4) 읽기 · 검사 · 길 찾기
+// 노드 성격은 ID 글자가 아니라 필드(type, stop_kind, lock, no_wait, pocket)로만 판단한다
+#pragma once
+
+#include <map>
+#include <string>
+#include <vector>
+
+#include "pinkytorang/types.hpp"
+
+namespace pinky {
+
+struct MapNode {
+  std::string id;
+  std::string type;       // PASS / STOP
+  std::string stop_kind;  // "" / QUEUE / PICKUP / SERVE / DOCK
+  std::string table;      // SERVE만
+  bool pocket = false;
+  bool no_wait = false;
+  bool lock = true;
+  double x = 0.0;
+  double y = 0.0;
+  double yaw = 0.0;
+  bool has_yaw = false;
+  std::vector<std::string> next;
+};
+
+struct TwoWayZone {
+  std::string id;
+  std::vector<std::string> nodes;  // 맨 앞 · 맨 뒤가 끝 노드
+};
+
+class MapManager {
+ public:
+  // 성공하면 true. 실패하면 error에 문제 목록
+  bool load(const std::string& path, std::string& error);
+
+  const MapNode* node(const std::string& id) const;  // 없으면 nullptr
+  const std::vector<MapNode>& nodes() const { return nodes_; }
+
+  std::string tableNode(const std::string& table) const;            // 없으면 ""
+  std::vector<std::string> nodesOfKind(const std::string& kind) const;
+
+  // 양방향 구간
+  bool inZone(const std::string& id) const;
+  bool isZoneEdge(const std::string& a, const std::string& b) const;  // a, b가 같은 구간 안
+  bool isZoneEndOnly(const std::string& id) const;                    // 속한 모든 구간에서 끝 노드
+
+  // 길 찾기 (다익스트라). 경로가 없으면 빈 vector
+  std::vector<std::string> shortestPath(const std::string& from, const std::string& to) const;
+  double pathLength(const std::vector<std::string>& path) const;
+  double distance(const std::string& a, const std::string& b) const;
+  double heading(const std::string& from, const std::string& to) const;
+  std::string nearestNode(double x, double y, double max_dist) const;  // 없으면 ""
+
+  MapView view(double board_w, double board_h) const;
+
+ private:
+  std::vector<MapNode> nodes_;
+  std::map<std::string, int> index_;  // id -> nodes_ 위치
+  std::vector<TwoWayZone> zones_;
+};
+
+}  // namespace pinky

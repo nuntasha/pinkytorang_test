@@ -1,0 +1,87 @@
+/* 핑키토랑 공통 스타일 (고객 · 매장 UI 공용) */
+:root {
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --surface-2: #fafaf8;
+  --text: #1c1c1e;
+  --muted: #6b6b70;
+  --faint: #a1a1a6;
+  --line: #e8e8e4;
+  --accent: #e5487f;
+  --accent-weak: #fdebf1;
+  --accent-ink: #b8285c;
+  --ok: #1f9d6b;
+  --ok-weak: #e6f5ee;
+  --warn: #c98200;
+  --warn-weak: #fdf3e0;
+  --err: #d64545;
+  --err-weak: #fdecec;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 16px rgba(0, 0, 0, .04);
+  --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR",
+    "Malgun Gothic", "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+button:disabled { cursor: default; opacity: .45; }
+
+.num { font-variant-numeric: tabular-nums; }
+
+/* 로고 */
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.02em; }
+.brand-mark {
+  width: 22px; height: 22px; border-radius: 7px; background: var(--accent);
+  display: grid; place-items: center;
+}
+.brand-mark::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+
+/* 버튼 */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 40px; padding: 0 16px; border-radius: var(--radius-sm);
+  font-weight: 600; font-size: 14px; transition: background .15s, transform .05s;
+}
+.btn:active:not(:disabled) { transform: scale(.98); }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-ink); }
+.btn-dark { background: var(--text); color: #fff; }
+.btn-ghost { background: var(--surface); border: 1px solid var(--line); }
+.btn-ghost:hover:not(:disabled) { background: var(--surface-2); }
+.btn-danger { background: var(--err); color: #fff; }
+
+/* 연결 상태 점 */
+.conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.conn::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.conn.on::before { background: var(--ok); }
+.conn.off::before { background: var(--err); }
+
+/* 토스트 */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px);
+  background: var(--text); color: #fff; padding: 10px 16px; border-radius: 999px;
+  font-size: 14px; opacity: 0; pointer-events: none; transition: all .25s; z-index: 100;
+  white-space: nowrap;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.empty { color: var(--faint); font-size: 14px; text-align: center; padding: 28px 0; }

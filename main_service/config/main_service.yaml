@@ -1,0 +1,65 @@
+# 핑키토랑 Main Service 설정
+# 상대 경로는 이 파일이 있는 폴더 기준
+
+http_port: 8080
+web_root: ../../web             # pinkytorang/web (고객 · 매장 · 입구 키오스크 UI)
+db_path: ../pinkytorang.db      # 없으면 새로 만든다
+node_graph: node_graph.yaml     # 노드 그래프 v6 (그림: node_map_v6.png, 맵 바뀌면 이 파일 교체)
+
+board_w: 2.28                   # 맵 크기 (m), UI 그림용
+board_h: 1.82
+
+# 서버 쪽 토픽 앞에 붙는 로봇 ID (/pinky1/fleet/...)
+robots: [pinky1, pinky2, pinky3]
+
+# ---- 작업 규칙
+table_timeout_sec: 30           # 서빙: 손님 수령 카운트다운
+guide_timeout_sec: 15           # 안내: 착석 확인 카운트다운
+depart_grace_sec: 2             # 카운트다운 0 이후 실제 출발까지
+max_active_serve: 2             # 동시에 서빙하는 로봇 최대 수
+
+# ---- 안내
+entrance_dock: D1               # 손님을 맞는 입구 도킹 (왼쪽 입구 통로 아래). 안내는 여기 서 있는 로봇이 한다
+entrance_keep_penalty_m: 1.5    # 서빙 배정 때 입구 로봇에 더하는 비용 (다른 로봇이 비슷한 거리면 그쪽에 서빙)
+
+# ---- 테이블 (id = node_graph의 table 값, seats = 좌석 수). 안내는 인원 이상인 빈 테이블 중 가장 작은 곳
+tables:
+  - {id: T1, seats: 2}          # 왼쪽 위
+  - {id: T2, seats: 6}          # 오른쪽 위 (큰 테이블)
+  - {id: T3, seats: 2}          # 왼쪽 아래
+  - {id: T4, seats: 4}          # 오른쪽 아래
+
+# ---- 배터리 (%) : 로봇 fleet/state 의 battery 값. 0 으로 두면 검사 안 함
+min_battery_pct: 30             # 이보다 낮으면 새 작업 안 주고 도킹에서 충전
+ready_battery_pct: 80           # 충전 중인 로봇은 이 이상이 돼야 다시 배정
+
+# ---- 시작 규칙
+require_dock_start: true        # 로봇은 도킹 위에서 켠다. 처음 위치가 도킹이 아니면 배정 안 함 (알림)
+
+# ---- 교통
+comm_timeout_sec: 3.0           # fleet/state가 이만큼 안 오면 통신 끊김
+lock_lookahead: 2               # 로봇 앞쪽으로 미리 잡는 lock 노드 수
+localize_radius_m: 0.15         # last_node가 비어 있을 때 좌표로 노드 찾는 반경
+
+# ---- UI
+done_keep_sec: 600              # 끝난 작업을 매장 화면 완료 열에 남기는 시간
+
+# ---- LCD 문구 ({table} = 테이블 이름). LCD 한글이 안 되면 영어로 바꾼다
+display:
+  to_pickup: ""
+  at_pickup: "음식을 올려 주세요"
+  to_table_serve: "{table} 배달 중"
+  at_table_serve: "음식이 도착했습니다. 가져가 주세요"
+  to_table_guide: "{table}(으)로 안내할게요. 따라오세요"
+  at_table_guide: "{table}입니다. 자리에 앉아 주세요"
+  to_dock: ""
+  idle: ""
+
+# ---- 메뉴 (GET /api/menu)
+menu:
+  - {id: 1, name: "토마토 파스타", price: 12000, desc: "생토마토 소스, 바질"}
+  - {id: 2, name: "크림 리조또", price: 13000, desc: "버섯, 파르메산"}
+  - {id: 3, name: "마르게리타 피자", price: 15000, desc: "모차렐라, 바질"}
+  - {id: 4, name: "시저 샐러드", price: 9000, desc: "로메인, 베이컨, 크루통"}
+  - {id: 5, name: "레몬에이드", price: 5000, desc: "직접 짠 레몬"}
+  - {id: 6, name: "아이스 아메리카노", price: 4000, desc: ""}

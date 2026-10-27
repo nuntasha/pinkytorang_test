@@ -1,0 +1,42 @@
+# 노드 그래프 v6 (입구 + 홀 테이블 4 + 주방 통로, 서버가 관리)
+# 그림: node_map_v6.png   좌표 = 그림 비율로 잡은 설계값(m), 원점 = 보드 왼쪽 아래. SLAM 맵 완성 후 실측값으로 교체
+#
+# ID 규칙: T 테이블 정차 / D 도킹 / P 픽업 줄 / N 길 위의 점
+# 필드: type PASS/STOP, stop_kind QUEUE/PICKUP/SERVE/DOCK, table, lock(코너만 false), pocket, yaw(STOP), next
+# 테이블 정차점은 길 위에 있다 (길 옆 테이블에 서서 서빙). 서 있는 동안 뒤 로봇은 기다리거나 다른 길로 돈다
+
+nodes:
+  # ---- 입구 통로 (양방향 1차선) ----
+  - {id: D1, type: STOP, stop_kind: DOCK, lock: true, x: 0.150, y: 0.300, yaw: 1.5708, next: [N1]}   # 입구 도킹 (안내 로봇, 위를 봄)
+  - {id: N1, type: PASS, lock: true, x: 0.150, y: 1.675, next: [N2, D1]}   # 입구 통로 위 끝
+
+  # ---- 윗길 (오른쪽 -> 왼쪽) ----
+  - {id: N5, type: PASS, lock: false, x: 1.995, y: 1.675, next: [N4]}   # 주방 통로 위 모서리
+  - {id: N4, type: PASS, lock: true, x: 1.695, y: 1.675, next: [N3]}   # 오른쪽 세로길 위 끝
+  - {id: N3, type: PASS, lock: true, x: 1.075, y: 1.675, next: [N2, N7]}   # 가운데 세로길 위 끝 (지름길)
+  - {id: N2, type: PASS, lock: true, x: 0.455, y: 1.675, next: [T1, N1]}   # 왼쪽 세로길 위 끝, 입구 통로 분기
+
+  # ---- 왼쪽 세로길 (아래로): T1, T3 서빙 ----
+  - {id: T1, type: STOP, stop_kind: SERVE, table: T1, lock: true, x: 0.455, y: 1.170, yaw: -1.5708, next: [T3]}   # T1 옆 정차
+  - {id: T3, type: STOP, stop_kind: SERVE, table: T3, lock: true, x: 0.455, y: 0.610, yaw: -1.5708, next: [N6]}   # T3 옆 정차
+
+  # ---- 아랫길 (왼쪽 -> 오른쪽) ----
+  - {id: N6, type: PASS, lock: false, x: 0.455, y: 0.145, next: [N7]}   # 왼쪽 아래 모서리
+  - {id: N7, type: PASS, lock: true, x: 1.075, y: 0.145, next: [N8]}   # 가운데 세로길 아래 끝
+  - {id: N8, type: PASS, lock: true, x: 1.695, y: 0.145, next: [N9, T4]}   # 오른쪽 세로길 아래 끝
+  - {id: N9, type: PASS, lock: true, x: 1.995, y: 0.145, next: [N10, D2]}   # 주방 통로 아래 끝, D2 앞
+
+  # ---- 오른쪽 세로길 (위로): T4, T2 서빙 ----
+  - {id: T4, type: STOP, stop_kind: SERVE, table: T4, lock: true, x: 1.695, y: 0.610, yaw: 1.5708, next: [T2]}   # T4 옆 정차
+  - {id: T2, type: STOP, stop_kind: SERVE, table: T2, lock: true, x: 1.695, y: 1.170, yaw: 1.5708, next: [N4]}   # T2 옆 정차
+
+  # ---- 주방 통로 (아래 -> 위) + 도킹 칸 ----
+  - {id: N10, type: PASS, lock: true, x: 1.995, y: 0.520, next: [P1, D3]}   # D3 앞
+  - {id: P1, type: STOP, stop_kind: QUEUE, lock: true, x: 1.995, y: 1.000, yaw: 1.5708, next: [P2]}   # 픽업 대기
+  - {id: P2, type: STOP, stop_kind: PICKUP, lock: true, x: 1.995, y: 1.450, yaw: 1.5708, next: [N5]}   # 픽업 창구 (오른쪽이 주방 카운터)
+  - {id: D2, type: STOP, stop_kind: DOCK, lock: true, x: 2.210, y: 0.145, yaw: 1.5708, next: [N9]}   # 도킹 (위를 봄)
+  - {id: D3, type: STOP, stop_kind: DOCK, lock: true, x: 2.210, y: 0.520, yaw: 1.5708, next: [N10]}   # 도킹 (위를 봄)
+
+# 양방향 1차선: 들어갈 때 나가는 끝 노드(또는 도킹)까지 한 번에 잡는다
+two_way_zones:
+  - {id: Z1, nodes: [N2, N1, D1]}   # 입구 통로
